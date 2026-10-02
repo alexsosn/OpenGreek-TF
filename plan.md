@@ -4,7 +4,7 @@ The 0.1.0 path is issue-driven. Semantic writer work is blocked until the source
 
 ## Bootstrap
 
-- #1 — repository contract, research/design/plan, package/CI scaffold, first pinned acquisition slice.
+- #1 — repository contract, research/design/plan, package/CI scaffold, and immutable supported-release identity.
 
 ## Research and schema
 
