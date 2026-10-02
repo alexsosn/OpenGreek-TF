@@ -49,6 +49,21 @@ standard TF advanced app/browser
 Agora materializer
 ```
 
+## Source acquisition
+
+Development and Agora both build from the immutable supported Open Greek release, not from the moving default branch.
+
+```bash
+python -m pip install -e '.[dev]'
+opengreek-tf source-info
+opengreek-tf fetch upstream/open-greek-corpus
+opengreek-tf verify-source upstream/open-greek-corpus
+```
+
+`fetch` installs the exact supported publishing commit as a detached checkout and verifies the repository origin plus `data/corpus_release.json` identity before returning it. The destination must be absent or empty. The upstream repository is large, so acquisition is intentionally separate from ordinary unit tests.
+
+Network access belongs to acquisition only. Later conversion commands receive a verified local checkout and must not fetch or repair source data.
+
 ## Text-Fabric app / web browser
 
 A standard Text-Fabric advanced app under `app/` is part of the release. Its section and text-format configuration is intentionally deferred until the native graph schema is frozen. The standard TF browser is the default web application; a custom web stack needs a demonstrated requirement.
