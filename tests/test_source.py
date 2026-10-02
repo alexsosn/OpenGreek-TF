@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from typing import Any
 
 import pytest
 
@@ -29,7 +31,7 @@ def _git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _manifest(identity: ReleaseIdentity) -> dict[str, object]:
+def _manifest(identity: ReleaseIdentity) -> dict[str, Any]:
     return {
         "corpus": {
             "works": identity.works,
@@ -157,7 +159,9 @@ def test_verify_source_rejects_missing_manifest(tmp_path: Path) -> None:
     ],
 )
 def test_verify_source_rejects_manifest_identity_drift(
-    tmp_path: Path, mutator, message: str
+    tmp_path: Path,
+    mutator: Callable[[dict[str, Any]], None],
+    message: str,
 ) -> None:
     source, identity = _make_source(tmp_path)
     manifest_path = source / "data" / "corpus_release.json"
@@ -209,7 +213,9 @@ def test_fetch_rejects_symlink_destination_before_git(tmp_path: Path) -> None:
 def test_fetch_uses_exact_commit_and_verifies_before_install() -> None:
     calls: list[list[str]] = []
 
-    def fake_run(args: list[str], *, capture_output: bool = False):
+    def fake_run(
+        args: list[str], *, capture_output: bool = False
+    ) -> subprocess.CompletedProcess[str]:
         calls.append(args)
         return subprocess.CompletedProcess(["git", *args], 0, stdout="", stderr="")
 
@@ -235,7 +241,9 @@ def test_fetch_uses_exact_commit_and_verifies_before_install() -> None:
 
 
 def test_fetch_failure_does_not_leave_partial_destination() -> None:
-    def fail_fetch(args: list[str], *, capture_output: bool = False):
+    def fail_fetch(
+        args: list[str], *, capture_output: bool = False
+    ) -> subprocess.CompletedProcess[str]:
         if "fetch" in args:
             raise SourceAcquisitionError("fetch failed")
         return subprocess.CompletedProcess(["git", *args], 0, stdout="", stderr="")
@@ -246,3 +254,23 @@ def test_fetch_failure_does_not_leave_partial_destination() -> None:
             with pytest.raises(SourceAcquisitionError, match="fetch failed"):
                 fetch_source(target)
         assert not target.exists()
+
+
+def test_fetch_failure_preserves_preexisting_empty_destination() -> None:
+    def fail_fetch(
+        args: list[str], *, capture_output: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        if "fetch" in args:
+            raise SourceAcquisitionError("fetch failed")
+        return subprocess.CompletedProcess(["git", *args], 0, stdout="", stderr="")
+
+    with TemporaryDirectory() as temp:
+        target = Path(temp) / "source"
+        target.mkdir()
+
+        with patch("opengreek_tf.source._run_git", side_effect=fail_fetch):
+            with pytest.raises(SourceAcquisitionError, match="fetch failed"):
+                fetch_source(target)
+
+        assert target.is_dir()
+        assert not any(target.iterdir())
