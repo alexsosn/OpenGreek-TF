@@ -74,3 +74,32 @@ def test_fetch_cli_uses_supported_identity() -> None:
         "path": "/acquired/source",
         "revision": SUPPORTED_RELEASE.commit,
     }
+
+
+def test_audit_source_cli_verifies_before_auditing(tmp_path: Path) -> None:
+    output_path = tmp_path / "audit.json"
+    snapshot = SourceSnapshot(
+        path=Path("/verified/source"),
+        revision=SUPPORTED_RELEASE.commit,
+    )
+    report = {"schema_version": 1, "text_families": {}, "metadata": {}, "catalog": {}}
+
+    with (
+        patch("opengreek_tf.cli.verify_source", return_value=snapshot) as verify,
+        patch("opengreek_tf.cli.audit_source", return_value=report) as audit,
+    ):
+        assert (
+            main(
+                [
+                    "audit-source",
+                    "/candidate/source",
+                    "--output",
+                    str(output_path),
+                ]
+            )
+            == 0
+        )
+
+    verify.assert_called_once_with("/candidate/source", identity=SUPPORTED_RELEASE)
+    audit.assert_called_once_with(snapshot.path)
+    assert json.loads(output_path.read_text(encoding="utf-8")) == report
