@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# OpenGreek-TF local source and generated artifacts
+/upstream/
+/corpus/
+/tf/
+/reports/generated/
+/artifacts/
