@@ -6,8 +6,8 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -104,14 +104,26 @@ def test_verify_source_accepts_exact_clean_checkout(tmp_path: Path) -> None:
 
 def test_verify_source_accepts_github_ssh_origin(tmp_path: Path) -> None:
     source, identity = _make_source(tmp_path)
-    _git(source, "remote", "set-url", "origin", "git@github.com:open-greek/open-greek-corpus.git")
+    _git(
+        source,
+        "remote",
+        "set-url",
+        "origin",
+        "git@github.com:open-greek/open-greek-corpus.git",
+    )
 
     assert verify_source(source, identity=identity).revision == identity.commit
 
 
 def test_verify_source_rejects_wrong_origin(tmp_path: Path) -> None:
     source, identity = _make_source(tmp_path)
-    _git(source, "remote", "set-url", "origin", "https://github.com/example/not-open-greek.git")
+    _git(
+        source,
+        "remote",
+        "set-url",
+        "origin",
+        "https://github.com/example/not-open-greek.git",
+    )
 
     with pytest.raises(SourceAcquisitionError, match="repository mismatch"):
         verify_source(source, identity=identity)
@@ -132,6 +144,15 @@ def test_verify_source_rejects_dirty_checkout(tmp_path: Path) -> None:
         verify_source(source, identity=identity)
 
 
+def test_verify_source_rejects_tracked_changes(tmp_path: Path) -> None:
+    source, identity = _make_source(tmp_path)
+    path = source / "data" / "corpus_release.json"
+    path.write_text(path.read_text(encoding="utf-8") + " ", encoding="utf-8")
+
+    with pytest.raises(SourceAcquisitionError, match="dirty"):
+        verify_source(source, identity=identity)
+
+
 def test_verify_source_rejects_missing_manifest(tmp_path: Path) -> None:
     source, identity = _make_source(tmp_path)
     (source / "data" / "corpus_release.json").unlink()
@@ -147,8 +168,14 @@ def test_verify_source_rejects_missing_manifest(tmp_path: Path) -> None:
     ("mutator", "message"),
     [
         (lambda m: m.__setitem__("release_id", "wrong"), "release id mismatch"),
-        (lambda m: m["pin"].__setitem__("corpus_sha256", "9" * 64), "corpus hash mismatch"),
-        (lambda m: m["pin"].__setitem__("catalog_sha256", "9" * 64), "catalog hash mismatch"),
+        (
+            lambda m: m["pin"].__setitem__("corpus_sha256", "9" * 64),
+            "corpus hash mismatch",
+        ),
+        (
+            lambda m: m["pin"].__setitem__("catalog_sha256", "9" * 64),
+            "catalog hash mismatch",
+        ),
         (lambda m: m["corpus"].__setitem__("works", 999), "work count mismatch"),
         (lambda m: m["corpus"].__setitem__("passages", 999), "passage count mismatch"),
         (lambda m: m["corpus"].__setitem__("tokens", 999), "token count mismatch"),
