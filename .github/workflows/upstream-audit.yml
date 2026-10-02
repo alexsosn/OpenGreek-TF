@@ -3,10 +3,7 @@ name: Upstream semantic audit
 on:
   pull_request:
     paths:
-      - "src/opengreek_tf/audit.py"
-      - "tests/test_audit.py"
-      - "docs/research/semantic-surface.md"
-      - ".github/workflows/upstream-audit.yml"
+      - ".github/upstream-audit-trigger"
   workflow_dispatch:
 
 jobs:
