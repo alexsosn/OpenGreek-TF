@@ -1,0 +1,7 @@
+# Bootstrap advanced-app configuration.
+# Issue #10 finalizes display, sections, formats, and links after #3 freezes the TF schema.
+apiVersion: 3
+provenanceSpec:
+  corpus: OpenGreek-TF = Open Greek Corpus in Text-Fabric
+  version: 0.1.0-dev
+writing: grc
