@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 import pytest
 
-from opengreek_tf import __version__
 from opengreek_tf.cli import main
 from opengreek_tf.release import SUPPORTED_RELEASE
 from opengreek_tf.source import SourceSnapshot
