@@ -189,6 +189,33 @@ def _fixture(root: Path) -> None:
         },
     )
     _json(
+        root / "data/work_metadata_remaps.json",
+        {
+            "_meta": {"description": "fixture"},
+            "works": {"author.work": "canonical.work"},
+        },
+    )
+    _json(
+        root / "data/pseudo_author_attributions.json",
+        {
+            "_meta": {"description": "fixture"},
+            "authors": {
+                "collective-author": {
+                    "name": "Collective Author",
+                    "aliases": {"wikidata": "Q2"},
+                    "note": "curated collective",
+                }
+            },
+            "works": {
+                "author.work": {
+                    "author": "collective-author",
+                    "title": "Curated Work",
+                    "evidence": ["served rows", "bibliography"],
+                }
+            },
+        },
+    )
+    _json(
         root / "data/coverage.json",
         {
             "author.work": {
@@ -197,6 +224,26 @@ def _fixture(root: Path) -> None:
                 "source": "first1k",
                 "tokens": 3,
             }
+        },
+    )
+    _json(
+        root / "data/partial_ceilings.json",
+        {
+            "title_rule": {
+                "pattern": "Fragmenta",
+                "reason": "modern locked collection",
+            },
+            "rule_exceptions": [
+                {"tlg_id": "tlg1", "work_id": "001", "note": "exception"}
+            ],
+            "works": [
+                {
+                    "tlg_id": "tlg2",
+                    "work_id": "002",
+                    "reason": "structural ceiling",
+                    "evidence": "survey",
+                }
+            ],
         },
     )
     _json(
@@ -264,6 +311,12 @@ def test_audit_wildcards_registry_editions_and_counts_identity_ledgers(
     assert report["metadata"]["author_ids"]["records"] == 1
     assert report["metadata"]["work_index"]["records"] == 1
     assert report["metadata"]["work_index_redirects"]["records"] == 1
+    assert report["metadata"]["work_metadata_remaps"]["records"] == 1
+    assert report["metadata"]["pseudo_author_attribution_authors"]["records"] == 1
+    assert report["metadata"]["pseudo_author_attribution_works"]["records"] == 1
+    assert report["metadata"]["partial_ceiling_works"]["records"] == 1
+    assert report["metadata"]["partial_ceiling_rule_exceptions"]["records"] == 1
+    assert report["metadata"]["partial_ceiling_policy"]["records"] == 1
 
 
 def test_audit_records_exact_source_edition_license_vocabularies(tmp_path: Path) -> None:
