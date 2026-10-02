@@ -47,6 +47,8 @@ jobs:
           /data/serving_deficits.json
           /data/partial_ceilings.json
           /data/work_id_aliases.json
+          /data/work_metadata_remaps.json
+          /data/pseudo_author_attributions.json
           EOF
           git -C upstream fetch --depth 1 --filter=blob:none origin             338aa27310b3cfe2588a993b4d113b503597d70f
           git -C upstream checkout --detach FETCH_HEAD
@@ -102,6 +104,12 @@ jobs:
                       "ocr_quality_works",
                       "partial_ceilings",
                       "work_id_aliases",
+                      "work_metadata_remaps",
+                      "pseudo_author_attribution_works",
+                      "pseudo_author_attribution_authors",
+                      "partial_ceiling_works",
+                      "partial_ceiling_rule_exceptions",
+                      "partial_ceiling_policy",
                   }
               },
               "metadata_vocabularies": {
