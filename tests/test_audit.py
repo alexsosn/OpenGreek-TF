@@ -1,0 +1,328 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from opengreek_tf.audit import AuditError, audit_source
+
+
+def _json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
+def _fixture(root: Path) -> None:
+    _jsonl(
+        root / "data/corpus/author.work.jsonl",
+        [
+            {
+                "urn": "author.work",
+                "edition": "ed-a",
+                "locus": "1.1",
+                "source": "first1k",
+                "license": "CC-BY-SA-4.0",
+                "text": "λόγος τις",
+                "corrections": ["manual"],
+                "provenance": {"page": 1, "method": "tei"},
+            },
+            {
+                "urn": "author.work",
+                "edition": "ed-a",
+                "locus": "1.2",
+                "source": "first1k",
+                "license": "CC-BY-SA-4.0",
+                "text": "ἄλλος",
+            },
+        ],
+    )
+    _jsonl(
+        root / "data/corpus_secondary/author.work.jsonl",
+        [
+            {
+                "urn": "author.work",
+                "edition": "ed-b",
+                "locus": "PG001_0010.1",
+                "source": "cgpg",
+                "license": "CC-BY-4.0",
+                "text": "λόγος",
+                "rank": "secondary",
+                "secondary_reason": "superseded by ed-a",
+                "witness": "migne",
+            }
+        ],
+    )
+    _jsonl(
+        root / "data/paratext/latin.jsonl",
+        [
+            {
+                "slug": "author.work",
+                "page": 10,
+                "lang": "la",
+                "license": "PD",
+                "source": "ocr",
+                "edition": "ed-b",
+                "text": "latine",
+                "class": "apparatus",
+            }
+        ],
+    )
+
+    _json(
+        root / "data/work_index.json",
+        {
+            "_meta": {"counts": {"works": 1, "redirects": 1}},
+            "works": {
+                "author.work": {
+                    "id": "ogc000001",
+                    "slug": "author.work",
+                    "former_slugs": ["old.work"],
+                    "title": "Work",
+                    "author": {
+                        "id": "oga000001",
+                        "slug": "author",
+                        "name": "Author",
+                        "authorities": {"wikidata": "Q1"},
+                    },
+                    "work_anchors": {"cts": "urn:cts:greekLit:tlg1.tlg1"},
+                    "manifestation": {
+                        "edition": "ed-a",
+                        "source": "first1k",
+                        "license": "CC-BY-SA-4.0",
+                        "n_passages": 2,
+                        "n_tokens": 3,
+                    },
+                }
+            },
+            "redirects": {"old.work": "author.work"},
+        },
+    )
+    _json(
+        root / "data/work_ids.json",
+        {
+            "_meta": {"counts": {"active": 1, "retired": 1}},
+            "works": {
+                "ogc000001": {"slug": "author.work", "former_slugs": [], "status": "served"},
+                "ogc000002": {"slug": "retired.work", "former_slugs": [], "status": "retired"},
+            },
+        },
+    )
+    _json(
+        root / "data/author_ids.json",
+        {
+            "_meta": {"counts": {"active": 1}},
+            "authors": {
+                "oga000001": {"slug": "author", "former_slugs": [], "status": "served"}
+            },
+        },
+    )
+    _json(
+        root / "data/source_registry.json",
+        {
+            "works": {
+                "author.work": {
+                    "title": "Work",
+                    "author": "author",
+                    "tags": ["genre:history", "century:2"],
+                    "aliases": {"cts": "urn:cts:greekLit:tlg1.tlg1"},
+                    "editions": {
+                        "ed-a": {
+                            "source": "first1k",
+                            "license": "CC-BY-SA-4.0",
+                            "editor": "Editor",
+                        }
+                    },
+                }
+            },
+            "authors": {
+                "author": {
+                    "name": "Author",
+                    "aliases": {"wikidata": "Q1"},
+                }
+            },
+        },
+    )
+    _json(
+        root / "data/corpus_editions.json",
+        {
+            "author.work": {
+                "id": "ogc000001",
+                "edition": "ed-a",
+                "source": "first1k",
+                "license": "CC-BY-SA-4.0",
+                "n_passages": 2,
+                "n_tokens": 3,
+            }
+        },
+    )
+    _json(
+        root / "data/served_scheme_inference.json",
+        {
+            "_meta": {"works": 1},
+            "works": {
+                "author.work": {
+                    "class": "logical-numeric",
+                    "depth": 2,
+                    "scheme": "book.section",
+                }
+            },
+        },
+    )
+    _json(
+        root / "data/tlg_crosswalk.json",
+        {
+            "author.work": {
+                "cts": "urn:cts:greekLit:tlg1.tlg1",
+                "tlg": "tlg1.tlg1",
+                "author_slug": "author",
+                "title": "Work",
+            }
+        },
+    )
+    _json(
+        root / "data/coverage.json",
+        {
+            "author.work": {
+                "license": "CC-BY-SA-4.0",
+                "passages": 2,
+                "source": "first1k",
+                "tokens": 3,
+            }
+        },
+    )
+    _json(
+        root / "data/corpus_release.json",
+        {
+            "release_id": "fixture",
+            "corpus": {"works": 1, "passages": 2, "tokens": 3},
+            "pin": {"corpus_sha256": "a" * 64, "catalog_sha256": "b" * 64},
+        },
+    )
+    (root / "data/corpus_catalog.tsv").write_text(
+        "slug\twork_id\tsource\tedition\tlicense\tcorrection\tscheme_class\tsha256\n"
+        "author.work\togc000001\tfirst1k\ted-a\tCC-BY-SA-4.0\tnot-ocr\t"
+        "logical-numeric\tdeadbeef\n",
+        encoding="utf-8",
+    )
+
+
+def test_audit_censuses_text_families_and_nested_structure(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+
+    report = audit_source(tmp_path)
+
+    primary = report["text_families"]["primary"]
+    assert primary["files"] == 1
+    assert primary["rows"] == 2
+    assert primary["paths"]["/corrections"]["types"] == {"array": 1}
+    assert primary["paths"]["/corrections"]["list_length"] == {"min": 1, "max": 1}
+    assert primary["paths"]["/provenance/page"]["types"] == {"integer": 1}
+    assert primary["vocabularies"]["source"] == ["first1k"]
+    assert primary["vocabularies"]["license"] == ["CC-BY-SA-4.0"]
+    assert primary["row_slug_mismatches"] == 0
+    assert primary["duplicate_loci"] == 0
+    assert len(primary["ordered_sha256"]) == 64
+
+    secondary = report["text_families"]["secondary"]
+    assert secondary["vocabularies"]["rank"] == ["secondary"]
+    assert secondary["vocabularies"]["witness"] == ["migne"]
+
+    paratext = report["text_families"]["paratext"]
+    assert paratext["vocabularies"]["lang"] == ["la"]
+    assert paratext["vocabularies"]["class"] == ["apparatus"]
+
+
+def test_audit_wildcards_registry_editions_and_counts_identity_ledgers(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path)
+
+    report = audit_source(tmp_path)
+
+    registry = report["metadata"]["source_registry_works"]
+    assert registry["records"] == 1
+    assert registry["paths"]["/editions"]["types"] == {"object": 1}
+    assert registry["paths"]["/editions/*/editor"]["types"] == {"string": 1}
+    assert registry["paths"]["/tags/*"]["types"] == {"string": 2}
+
+    assert report["metadata"]["work_ids"]["records"] == 2
+    assert report["metadata"]["author_ids"]["records"] == 1
+    assert report["metadata"]["work_index"]["records"] == 1
+    assert report["metadata"]["work_index_redirects"]["records"] == 1
+
+
+def test_audit_records_exact_source_edition_license_vocabularies(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+
+    report = audit_source(tmp_path)
+
+    assert report["text_families"]["primary"]["vocabularies"] == {
+        "edition": ["ed-a"],
+        "license": ["CC-BY-SA-4.0"],
+        "source": ["first1k"],
+    }
+    registry = report["metadata"]["source_registry_works"]
+    assert registry["vocabularies"]["/editions/*/license"] == ["CC-BY-SA-4.0"]
+    assert registry["vocabularies"]["/editions/*/source"] == ["first1k"]
+
+
+def test_audit_detects_duplicate_loci_and_row_slug_mismatch(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    path = tmp_path / "data/corpus/author.work.jsonl"
+    rows = [
+        {
+            "urn": "wrong.work",
+            "edition": "ed-a",
+            "locus": "1",
+            "source": "first1k",
+            "license": "CC-BY-SA-4.0",
+            "text": "α",
+        },
+        {
+            "urn": "wrong.work",
+            "edition": "ed-a",
+            "locus": "1",
+            "source": "first1k",
+            "license": "CC-BY-SA-4.0",
+            "text": "β",
+        },
+    ]
+    _jsonl(path, rows)
+
+    primary = audit_source(tmp_path)["text_families"]["primary"]
+
+    assert primary["row_slug_mismatches"] == 2
+    assert primary["duplicate_loci"] == 1
+    assert primary["duplicate_record_keys"] == 1
+
+
+def test_audit_is_deterministic(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+
+    assert audit_source(tmp_path) == audit_source(tmp_path)
+
+
+def test_audit_fails_closed_on_malformed_jsonl(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    path = tmp_path / "data/corpus/author.work.jsonl"
+    path.write_text('{"urn": "author.work"}\n{broken\n', encoding="utf-8")
+
+    with pytest.raises(AuditError, match=r"author\.work\.jsonl:2"):
+        audit_source(tmp_path)
+
+
+def test_audit_fails_closed_when_required_metadata_is_missing(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    (tmp_path / "data/work_index.json").unlink()
+
+    with pytest.raises(AuditError, match="work_index.json"):
+        audit_source(tmp_path)
