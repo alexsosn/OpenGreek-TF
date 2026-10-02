@@ -224,8 +224,12 @@ def test_audit_censuses_text_families_and_nested_structure(tmp_path: Path) -> No
     assert primary["files"] == 1
     assert primary["rows"] == 2
     assert primary["paths"]["/corrections"]["types"] == {"array": 1}
+    assert primary["paths"]["/corrections"]["missing"] == 1
     assert primary["paths"]["/corrections"]["list_length"] == {"min": 1, "max": 1}
+    assert primary["paths"]["/provenance"]["missing"] == 1
+    assert primary["paths"]["/provenance"]["object_length"] == {"min": 2, "max": 2}
     assert primary["paths"]["/provenance/page"]["types"] == {"integer": 1}
+    assert primary["paths"]["/provenance/page"]["missing"] == 0
     assert primary["vocabularies"]["source"] == ["first1k"]
     assert primary["vocabularies"]["license"] == ["CC-BY-SA-4.0"]
     assert primary["row_slug_mismatches"] == 0
@@ -251,7 +255,9 @@ def test_audit_wildcards_registry_editions_and_counts_identity_ledgers(
     registry = report["metadata"]["source_registry_works"]
     assert registry["records"] == 1
     assert registry["paths"]["/editions"]["types"] == {"object": 1}
+    assert registry["paths"]["/editions"]["object_length"] == {"min": 1, "max": 1}
     assert registry["paths"]["/editions/*/editor"]["types"] == {"string": 1}
+    assert registry["paths"]["/editions/*/editor"]["missing"] == 0
     assert registry["paths"]["/tags/*"]["types"] == {"string": 2}
 
     assert report["metadata"]["work_ids"]["records"] == 2
