@@ -1,0 +1,134 @@
+name: Upstream semantic audit
+
+on:
+  pull_request:
+    paths:
+      - ".github/upstream-audit-trigger"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e .
+
+      - name: Sparse-checkout pinned Open Greek semantic surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus/
+          /data/corpus_secondary/
+          /data/paratext/
+          /data/work_index.json
+          /data/work_ids.json
+          /data/author_ids.json
+          /data/source_registry.json
+          /data/corpus_editions.json
+          /data/served_scheme_inference.json
+          /data/tlg_crosswalk.json
+          /data/coverage.json
+          /data/corpus_release.json
+          /data/corpus_catalog.tsv
+          /data/ocr_quality_report.json
+          /data/serving_deficits.json
+          /data/partial_ceilings.json
+          /data/work_id_aliases.json
+          /data/work_metadata_remaps.json
+          /data/pseudo_author_attributions.json
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin             338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+
+      - name: Verify exact upstream identity
+        run: opengreek-tf verify-source upstream
+
+      - name: Audit full semantic surface
+        run: opengreek-tf audit-source upstream --output semantic-audit.json
+
+      - name: Assert release invariants and print measured summary
+        shell: python
+        run: |
+          import json
+
+          with open("semantic-audit.json", encoding="utf-8") as handle:
+              report = json.load(handle)
+
+          primary = report["text_families"]["primary"]
+          assert primary["files"] == 3909, primary["files"]
+          assert primary["rows"] == 1_970_947, primary["rows"]
+          assert report["metadata"]["work_index"]["records"] == 3909
+
+          summary = {
+              "text_families": {
+                  name: {
+                      "files": family["files"],
+                      "rows": family["rows"],
+                      "row_slug_mismatches": family["row_slug_mismatches"],
+                      "duplicate_loci": family["duplicate_loci"],
+                      "duplicate_record_keys": family["duplicate_record_keys"],
+                      "paths": family["paths"],
+                      "vocabularies": family["vocabularies"],
+                  }
+                  for name, family in report["text_families"].items()
+              },
+              "metadata_records": {
+                  name: value["records"]
+                  for name, value in report["metadata"].items()
+                  if "records" in value
+              },
+              "metadata_paths": {
+                  name: value["paths"]
+                  for name, value in report["metadata"].items()
+                  if name in {
+                      "work_index",
+                      "work_ids",
+                      "author_ids",
+                      "source_registry_works",
+                      "source_registry_authors",
+                      "corpus_editions",
+                      "served_scheme_inference",
+                      "ocr_quality_works",
+                      "partial_ceilings",
+                      "work_id_aliases",
+                      "work_metadata_remaps",
+                      "pseudo_author_attribution_works",
+                      "pseudo_author_attribution_authors",
+                      "partial_ceiling_works",
+                      "partial_ceiling_rule_exceptions",
+                      "partial_ceiling_policy",
+                  }
+              },
+              "metadata_vocabularies": {
+                  name: value["vocabularies"]
+                  for name, value in report["metadata"].items()
+                  if value.get("vocabularies")
+              },
+              "catalog": {
+                  "rows": report["catalog"]["rows"],
+                  "columns": report["catalog"]["columns"],
+                  "vocabularies": report["catalog"]["vocabularies"],
+              },
+          }
+          print("SEMANTIC_AUDIT_SUMMARY_BEGIN")
+          print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+          print("SEMANTIC_AUDIT_SUMMARY_END")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: semantic-audit
+          path: semantic-audit.json
+          if-no-files-found: error
