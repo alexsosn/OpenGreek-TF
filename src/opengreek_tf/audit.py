@@ -147,6 +147,8 @@ class _PathStat:
     types: Counter[str] = field(default_factory=Counter)
     list_min: int | None = None
     list_max: int | None = None
+    object_min: int | None = None
+    object_max: int | None = None
 
     def observe(self, value: Any) -> None:
         self.present += 1
@@ -155,6 +157,14 @@ class _PathStat:
             length = len(value)
             self.list_min = length if self.list_min is None else min(self.list_min, length)
             self.list_max = length if self.list_max is None else max(self.list_max, length)
+        if isinstance(value, dict):
+            length = len(value)
+            self.object_min = (
+                length if self.object_min is None else min(self.object_min, length)
+            )
+            self.object_max = (
+                length if self.object_max is None else max(self.object_max, length)
+            )
 
     def render(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -163,6 +173,11 @@ class _PathStat:
         }
         if self.list_min is not None:
             result["list_length"] = {"min": self.list_min, "max": self.list_max}
+        if self.object_min is not None:
+            result["object_length"] = {
+                "min": self.object_min,
+                "max": self.object_max,
+            }
         return result
 
 
@@ -202,8 +217,26 @@ class _Census:
         else:
             self.observe(record, "/value")
 
-    def render(self) -> tuple[dict[str, Any], dict[str, list[str]]]:
-        paths = {key: self.paths[key].render() for key in sorted(self.paths)}
+    def render(
+        self, record_count: int
+    ) -> tuple[dict[str, Any], dict[str, list[str]]]:
+        paths: dict[str, Any] = {}
+        for key in sorted(self.paths):
+            rendered = self.paths[key].render()
+            if not key.endswith("/*"):
+                parent = key.rsplit("/", 1)[0]
+                if parent == "":
+                    contexts = record_count
+                else:
+                    parent_stat = self.paths.get(parent)
+                    contexts = (
+                        parent_stat.types.get("object", 0)
+                        if parent_stat is not None
+                        else 0
+                    )
+                if contexts >= self.paths[key].present:
+                    rendered["missing"] = contexts - self.paths[key].present
+            paths[key] = rendered
         vocabs = {
             key: sorted(values)
             for key, values in sorted(self.vocabularies.items())
@@ -305,7 +338,7 @@ def _audit_jsonl_family(
                 else:
                     seen_keys.add(record_key)
 
-    paths, raw_vocabs = census.render()
+    paths, raw_vocabs = census.render(rows)
     vocabularies = {
         path.removeprefix("/"): values
         for path, values in raw_vocabs.items()
@@ -365,7 +398,7 @@ def _audit_mapping(
     for key in sorted(collection):
         census.observe_record(collection[key])
 
-    paths, vocabularies = census.render()
+    paths, vocabularies = census.render(len(collection))
     key_digest = hashlib.sha256()
     for key in sorted(collection):
         key_digest.update(f"{key}\n".encode())
@@ -398,7 +431,7 @@ def _audit_list(
     census = _Census()
     for value in values:
         census.observe_record(value)
-    paths, vocabularies = census.render()
+    paths, vocabularies = census.render(len(values))
     return {
         "path": relative_path,
         "collection": collection_key,
@@ -415,7 +448,7 @@ def _audit_release_manifest(source: Path) -> dict[str, Any]:
     payload = _load_json(path)
     census = _Census()
     census.observe_record(payload)
-    paths, vocabularies = census.render()
+    paths, vocabularies = census.render(1)
     release_id = payload.get("release_id") if isinstance(payload, dict) else None
     return {
         "path": relative_path,
