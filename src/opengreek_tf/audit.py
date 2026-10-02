@@ -111,11 +111,37 @@ OPTIONAL_MAPPING_ARTIFACTS: dict[
         frozenset(),
         frozenset(),
     ),
+    "work_metadata_remaps": (
+        "data/work_metadata_remaps.json",
+        "works",
+        frozenset(),
+        frozenset(),
+    ),
+    "pseudo_author_attribution_works": (
+        "data/pseudo_author_attributions.json",
+        "works",
+        frozenset(),
+        frozenset(),
+    ),
+    "pseudo_author_attribution_authors": (
+        "data/pseudo_author_attributions.json",
+        "authors",
+        frozenset(),
+        frozenset(),
+    ),
 }
 
 OPTIONAL_LIST_ARTIFACTS: dict[str, tuple[str, str]] = {
-    "partial_ceilings": ("data/partial_ceilings.json", "works"),
+    "partial_ceiling_works": ("data/partial_ceilings.json", "works"),
+    "partial_ceiling_rule_exceptions": (
+        "data/partial_ceilings.json",
+        "rule_exceptions",
+    ),
     "work_id_aliases": ("data/work_id_aliases.json", "renames"),
+}
+
+OPTIONAL_OBJECT_ARTIFACTS: dict[str, tuple[str, str]] = {
+    "partial_ceiling_policy": ("data/partial_ceilings.json", "title_rule"),
 }
 
 
@@ -442,6 +468,33 @@ def _audit_list(
     }
 
 
+def _audit_named_object(
+    source: Path,
+    relative_path: str,
+    object_key: str,
+) -> dict[str, Any]:
+    path = source / relative_path
+    payload = _load_json(path)
+    if not isinstance(payload, dict):
+        raise AuditError(f"metadata root is not an object: {path}")
+    value = payload.get(object_key)
+    if not isinstance(value, dict):
+        raise AuditError(
+            f"metadata object {object_key!r} is not an object: {path}"
+        )
+    census = _Census()
+    census.observe_record(value)
+    paths, vocabularies = census.render(1)
+    return {
+        "path": relative_path,
+        "collection": object_key,
+        "records": 1,
+        "file_sha256": _sha256_file(path),
+        "paths": paths,
+        "vocabularies": vocabularies,
+    }
+
+
 def _audit_release_manifest(source: Path) -> dict[str, Any]:
     relative_path = "data/corpus_release.json"
     path = source / relative_path
@@ -518,6 +571,14 @@ def _existing_optional_list_reports(source: Path) -> Iterable[tuple[str, dict[st
             yield name, _audit_list(source, relative_path, collection_key)
 
 
+def _existing_optional_object_reports(
+    source: Path,
+) -> Iterable[tuple[str, dict[str, Any]]]:
+    for name, (relative_path, object_key) in OPTIONAL_OBJECT_ARTIFACTS.items():
+        if (source / relative_path).is_file():
+            yield name, _audit_named_object(source, relative_path, object_key)
+
+
 def audit_source(source: str | Path) -> dict[str, Any]:
     """Audit the complete currently recognized semantic surface deterministically."""
     root = Path(source).resolve()
@@ -544,6 +605,7 @@ def audit_source(source: str | Path) -> dict[str, Any]:
         )
     metadata.update(_existing_optional_mapping_reports(root))
     metadata.update(_existing_optional_list_reports(root))
+    metadata.update(_existing_optional_object_reports(root))
     metadata["corpus_release"] = _audit_release_manifest(root)
 
     return {
