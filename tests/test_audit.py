@@ -278,7 +278,7 @@ def test_audit_records_exact_source_edition_license_vocabularies(tmp_path: Path)
 def test_audit_detects_duplicate_loci_and_row_slug_mismatch(tmp_path: Path) -> None:
     _fixture(tmp_path)
     path = tmp_path / "data/corpus/author.work.jsonl"
-    rows = [
+    rows: list[dict[str, object]] = [
         {
             "urn": "wrong.work",
             "edition": "ed-a",
