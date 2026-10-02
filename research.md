@@ -136,3 +136,28 @@ Issue #2 must answer at least:
 - whether locus strings have source-specific parseable structure or must remain opaque labels in some families;
 - licensing and attribution obligations for each in-scope layer;
 - whether separate Open Greek annotation products belong in 0.1 or later independently versioned modules/materializers.
+
+
+## R-004 — pinned source acquisition contract
+
+Date: 2026-10-03  
+Issue: #4
+
+Open Greek's release tag is stronger than a branch name but the converter should still build from the tag's immutable publishing commit. For `corpus-2026-09-15.2` that commit is `338aa27310b3cfe2588a993b4d113b503597d70f`.
+
+A local source checkout is accepted only when all of these agree:
+
+1. Git `HEAD` is the supported full 40-hex publishing commit;
+2. the checkout is clean, including untracked files;
+3. `origin` identifies `open-greek/open-greek-corpus` (canonical HTTPS and GitHub SSH forms are equivalent for verification);
+4. `data/corpus_release.json` exists and parses as JSON;
+5. the manifest reports release id `corpus-2026-09-15.2`;
+6. its corpus and catalog SHA-256 values match the supported release;
+7. its work/passage/token counts match the supported release;
+8. its `generated_from.commit` matches the recorded content-build provenance.
+
+The manifest checks are intentionally redundant with Git identity. They turn accidental checkout mistakes, stale release metadata, or a future repository-history anomaly into an explicit failure before a multi-gigabyte conversion starts.
+
+Acquisition is allowed to use the network. Parsing/conversion must not. The fetch helper therefore installs a detached checkout atomically into an empty/nonexistent destination and validates it before exposing it to the converter.
+
+This initial contract supports one release rather than a free-form `--revision` option. Supporting another release means adding an explicit supported release identity and tests, not passing an arbitrary SHA that bypasses release-manifest expectations.
