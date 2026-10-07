@@ -219,11 +219,28 @@ with the epistemic limitations documented upstream.
 
 The first full run measured repeated loci and secondary filename/`urn`
 differences. Those aggregate counts are being re-run with per-file evidence
-before #2 is closed. They are not converter errors by definition: Open Greek
-already has explicit multipart-row, duplicate-read, displaced-witness and
-historical-key mechanisms. #3 must consume the classified evidence and preserve
-the source distinctions rather than deduplicating or renaming records by
-heuristic.
+before #2 is closed.
+
+The secondary filename/`urn` difference is at least partly deliberate and must
+not be normalized away. Upstream duplicate-read workflows move unchanged work
+rows into files named `<work>.duplicate-read.jsonl` or
+`<work>.duplicate-read-merged.jsonl`, then add secondary/displacement metadata
+while leaving the row's work `urn` intact. Thus a secondary filename can name a
+witness container while `urn` names the work it witnesses. #3 needs separate
+work identity and witness/container identity.
+
+Repeated primary loci still require per-file classification. The open-TEI
+builder explicitly resolves its own same-locus collisions: exact repeats are
+collapsed and distinct readings receive deterministic disambiguated loci plus
+`base_locus` and optional recension `witness`. Therefore any remaining
+same-locus groups in the complete primary corpus arise outside that already
+disambiguated path or from later/source-specific transformations and must be
+inspected before a uniqueness invariant is assumed.
+
+Neither class is a converter error by definition. Open Greek has explicit
+multipart-row, duplicate-read, displaced-witness and historical-key mechanisms.
+#3 must consume the classified evidence and preserve the source distinctions
+rather than deduplicating or renaming records by heuristic.
 
 ## Artifact classification for the schema phase
 
