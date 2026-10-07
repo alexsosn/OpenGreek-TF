@@ -133,10 +133,15 @@ def _fixture(root: Path) -> None:
                     "title": "Work",
                     "author": "author",
                     "tags": ["genre:history", "century:2"],
+                    "best_source": "open_corpus",
                     "aliases": {"cts": "urn:cts:greekLit:tlg1.tlg1"},
                     "editions": {
                         "ed-a": {
                             "source": "first1k",
+                            "provider": "first1k",
+                            "scheme": "book.section",
+                            "scheme_inferred": False,
+                            "servable": True,
                             "license": "CC-BY-SA-4.0",
                             "editor": "Editor",
                         }
@@ -335,7 +340,13 @@ def test_audit_records_exact_source_edition_license_vocabularies(tmp_path: Path)
         "source": ["first1k"],
     }
     registry = report["metadata"]["source_registry_works"]
+    assert registry["vocabularies"]["/best_source"] == ["open_corpus"]
+    assert registry["vocabularies"]["/tags/*"] == ["century:2", "genre:history"]
     assert registry["vocabularies"]["/editions/*/license"] == ["CC-BY-SA-4.0"]
+    assert registry["vocabularies"]["/editions/*/provider"] == ["first1k"]
+    assert registry["vocabularies"]["/editions/*/scheme"] == ["book.section"]
+    assert registry["vocabularies"]["/editions/*/scheme_inferred"] == ["False"]
+    assert registry["vocabularies"]["/editions/*/servable"] == ["True"]
     assert registry["vocabularies"]["/editions/*/source"] == ["first1k"]
 
 
