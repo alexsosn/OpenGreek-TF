@@ -12,10 +12,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-TEXT_FAMILIES = {
-    "primary": ("data/corpus", True),
-    "secondary": ("data/corpus_secondary", True),
-    "paratext": ("data/paratext", False),
+TEXT_FAMILIES: dict[str, tuple[str, bool, tuple[str, ...], str | None]] = {
+    "primary": (
+        "data/corpus",
+        True,
+        ("urn", "locus", "edition", "source", "rank", "witness"),
+        "locus",
+    ),
+    "secondary": (
+        "data/corpus_secondary",
+        True,
+        ("urn", "locus", "edition", "source", "rank", "witness"),
+        "locus",
+    ),
+    "paratext": (
+        "data/paratext",
+        False,
+        ("slug", "page", "edition", "source", "class", "lang"),
+        None,
+    ),
 }
 
 JSONL_VOCAB_FIELDS = frozenset(
@@ -293,6 +308,8 @@ def _audit_jsonl_family(
     relative_dir: str,
     *,
     compare_row_slug_to_filename: bool,
+    record_key_fields: tuple[str, ...],
+    locus_field: str | None,
 ) -> dict[str, Any]:
     directory = source / relative_dir
     if not directory.is_dir():
@@ -312,6 +329,9 @@ def _audit_jsonl_family(
     row_slug_mismatches = 0
     duplicate_loci = 0
     duplicate_record_keys = 0
+    row_slug_mismatches_by_file: dict[str, int] = {}
+    duplicate_loci_by_file: dict[str, int] = {}
+    duplicate_record_keys_by_file: dict[str, int] = {}
 
     for path in files:
         file_hash = _sha256_file(path)
@@ -321,6 +341,9 @@ def _audit_jsonl_family(
         seen_loci: set[str] = set()
         seen_keys: set[tuple[str, ...]] = set()
         expected_slug = path.stem
+        file_row_slug_mismatches = 0
+        file_duplicate_loci = 0
+        file_duplicate_record_keys = 0
 
         try:
             handle = path.open(encoding="utf-8")
@@ -348,22 +371,30 @@ def _audit_jsonl_family(
                     urn = row.get("urn")
                     if not isinstance(urn, str) or urn != expected_slug:
                         row_slug_mismatches += 1
+                        file_row_slug_mismatches += 1
 
-                locus = row.get("locus")
-                if isinstance(locus, str) and locus:
-                    if locus in seen_loci:
-                        duplicate_loci += 1
-                    else:
-                        seen_loci.add(locus)
+                if locus_field is not None:
+                    locus = row.get(locus_field)
+                    if isinstance(locus, str) and locus:
+                        if locus in seen_loci:
+                            duplicate_loci += 1
+                            file_duplicate_loci += 1
+                        else:
+                            seen_loci.add(locus)
 
-                record_key = tuple(
-                    str(row.get(field, ""))
-                    for field in ("urn", "locus", "edition", "source", "rank", "witness")
-                )
+                record_key = tuple(str(row.get(field, "")) for field in record_key_fields)
                 if record_key in seen_keys:
                     duplicate_record_keys += 1
+                    file_duplicate_record_keys += 1
                 else:
                     seen_keys.add(record_key)
+
+        if file_row_slug_mismatches:
+            row_slug_mismatches_by_file[path.name] = file_row_slug_mismatches
+        if file_duplicate_loci:
+            duplicate_loci_by_file[path.name] = file_duplicate_loci
+        if file_duplicate_record_keys:
+            duplicate_record_keys_by_file[path.name] = file_duplicate_record_keys
 
     paths, raw_vocabs = census.render(rows)
     vocabularies = {
@@ -381,8 +412,13 @@ def _audit_jsonl_family(
         "paths": paths,
         "vocabularies": dict(sorted(vocabularies.items())),
         "row_slug_mismatches": row_slug_mismatches,
+        "row_slug_mismatches_by_file": dict(sorted(row_slug_mismatches_by_file.items())),
         "duplicate_loci": duplicate_loci,
+        "duplicate_loci_by_file": dict(sorted(duplicate_loci_by_file.items())),
         "duplicate_record_keys": duplicate_record_keys,
+        "duplicate_record_keys_by_file": dict(
+            sorted(duplicate_record_keys_by_file.items())
+        ),
     }
 
 
@@ -587,11 +623,18 @@ def audit_source(source: str | Path) -> dict[str, Any]:
         raise AuditError(f"source directory does not exist: {root}")
 
     text_families: dict[str, Any] = {}
-    for name, (relative_dir, compare_slug) in TEXT_FAMILIES.items():
+    for name, (
+        relative_dir,
+        compare_slug,
+        record_key_fields,
+        locus_field,
+    ) in TEXT_FAMILIES.items():
         text_families[name] = _audit_jsonl_family(
             root,
             relative_dir,
             compare_row_slug_to_filename=compare_slug,
+            record_key_fields=record_key_fields,
+            locus_field=locus_field,
         )
 
     metadata: dict[str, Any] = {}
