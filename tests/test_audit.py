@@ -194,6 +194,17 @@ def _fixture(root: Path) -> None:
         },
     )
     _json(
+        root / "data/corpus_loci_disambiguated.json",
+        {
+            "author.work": {
+                "1.1": {
+                    "basis": "ordinal",
+                    "loci": ["1.1", "1.1~2"],
+                }
+            }
+        },
+    )
+    _json(
         root / "data/work_metadata_remaps.json",
         {
             "_meta": {"description": "fixture"},
@@ -321,6 +332,12 @@ def test_audit_wildcards_registry_editions_and_counts_identity_ledgers(
     assert report["metadata"]["author_ids"]["records"] == 1
     assert report["metadata"]["work_index"]["records"] == 1
     assert report["metadata"]["work_index_redirects"]["records"] == 1
+    disambiguated = report["metadata"]["corpus_loci_disambiguated"]
+    assert disambiguated["records"] == 1
+    assert disambiguated["paths"]["/*"]["types"] == {"object": 1}
+    assert disambiguated["paths"]["/*/basis"]["types"] == {"string": 1}
+    assert disambiguated["paths"]["/*/loci"]["list_length"] == {"min": 2, "max": 2}
+    assert disambiguated["vocabularies"]["/*/basis"] == ["ordinal"]
     assert report["metadata"]["work_metadata_remaps"]["records"] == 1
     assert report["metadata"]["pseudo_author_attribution_authors"]["records"] == 1
     assert report["metadata"]["pseudo_author_attribution_works"]["records"] == 1
