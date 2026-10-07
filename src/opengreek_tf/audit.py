@@ -225,6 +225,11 @@ LIST_ARTIFACTS: dict[
         "collections",
         frozenset(),
     ),
+    "duplicate_read_merge_guesses": (
+        "data/duplicate_read_merge_guesses.json",
+        "rows",
+        frozenset(),
+    ),
 }
 
 OBJECT_ARTIFACTS: dict[str, tuple[str, str]] = {
