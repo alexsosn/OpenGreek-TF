@@ -389,6 +389,22 @@ def _fixture(root: Path) -> None:
         },
     )
     _json(
+        root / "data/duplicate_read_merge_guesses.json",
+        {
+            "what": "fixture",
+            "positions": 1,
+            "rows": [
+                {
+                    "file": "data/corpus/author.work.jsonl",
+                    "row": 0,
+                    "offset": 0,
+                    "served": "λόγος",
+                    "rejected": ["λογος"],
+                }
+            ],
+        },
+    )
+    _json(
         root / "data/corpus_loci_warnings.json",
         {
             "author.work": {
@@ -488,6 +504,11 @@ def test_audit_wildcards_registry_editions_and_counts_identity_ledgers(
     assert report["metadata"]["oga_duplicates_tlg_pta"]["records"] == 1
     assert report["metadata"]["collection_serving_map"]["records"] == 1
     assert report["metadata"]["corpus_loci_warnings"]["records"] == 1
+    guesses = report["metadata"]["duplicate_read_merge_guesses"]
+    assert guesses["records"] == 1
+    assert guesses["paths"]["/rejected"]["types"] == {"array": 1}
+    assert guesses["paths"]["/rejected"]["list_length"] == {"min": 1, "max": 1}
+    assert guesses["paths"]["/offset"]["types"] == {"integer": 1}
 
 
 def test_audit_records_exact_source_edition_license_vocabularies(tmp_path: Path) -> None:
