@@ -280,7 +280,11 @@ def test_audit_censuses_text_families_and_nested_structure(tmp_path: Path) -> No
     assert primary["vocabularies"]["source"] == ["first1k"]
     assert primary["vocabularies"]["license"] == ["CC-BY-SA-4.0"]
     assert primary["row_slug_mismatches"] == 0
+    assert primary["row_slug_mismatches_by_file"] == {}
     assert primary["duplicate_loci"] == 0
+    assert primary["duplicate_loci_by_file"] == {}
+    assert primary["duplicate_record_keys"] == 0
+    assert primary["duplicate_record_keys_by_file"] == {}
     assert len(primary["ordered_sha256"]) == 64
 
     secondary = report["text_families"]["secondary"]
@@ -290,6 +294,7 @@ def test_audit_censuses_text_families_and_nested_structure(tmp_path: Path) -> No
     paratext = report["text_families"]["paratext"]
     assert paratext["vocabularies"]["lang"] == ["la"]
     assert paratext["vocabularies"]["class"] == ["apparatus"]
+    assert paratext["duplicate_record_keys"] == 0
 
 
 def test_audit_wildcards_registry_editions_and_counts_identity_ledgers(
@@ -360,8 +365,11 @@ def test_audit_detects_duplicate_loci_and_row_slug_mismatch(tmp_path: Path) -> N
     primary = audit_source(tmp_path)["text_families"]["primary"]
 
     assert primary["row_slug_mismatches"] == 2
+    assert primary["row_slug_mismatches_by_file"] == {"author.work.jsonl": 2}
     assert primary["duplicate_loci"] == 1
+    assert primary["duplicate_loci_by_file"] == {"author.work.jsonl": 1}
     assert primary["duplicate_record_keys"] == 1
+    assert primary["duplicate_record_keys_by_file"] == {"author.work.jsonl": 1}
 
 
 def test_audit_is_deterministic(tmp_path: Path) -> None:
@@ -385,3 +393,38 @@ def test_audit_fails_closed_when_required_metadata_is_missing(tmp_path: Path) ->
 
     with pytest.raises(AuditError, match="work_index.json"):
         audit_source(tmp_path)
+
+
+def test_paratext_duplicate_key_uses_paratext_identity_fields(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    path = tmp_path / "data/paratext/latin.jsonl"
+    _jsonl(
+        path,
+        [
+            {
+                "slug": "author.work",
+                "page": 10,
+                "lang": "la",
+                "license": "PD",
+                "source": "ocr",
+                "edition": "ed-b",
+                "text": "one",
+                "class": "apparatus",
+            },
+            {
+                "slug": "author.work",
+                "page": 11,
+                "lang": "la",
+                "license": "PD",
+                "source": "ocr",
+                "edition": "ed-b",
+                "text": "two",
+                "class": "apparatus",
+            },
+        ],
+    )
+
+    paratext = audit_source(tmp_path)["text_families"]["paratext"]
+
+    assert paratext["duplicate_record_keys"] == 0
+    assert paratext["duplicate_record_keys_by_file"] == {}
