@@ -41,6 +41,7 @@ jobs:
           /data/source_registry.json
           /data/corpus_editions.json
           /data/served_scheme_inference.json
+          /data/corpus_loci_disambiguated.json
           /data/tlg_crosswalk.json
           /data/coverage.json
           /data/corpus_release.json
@@ -115,6 +116,7 @@ jobs:
                       "source_registry_authors",
                       "corpus_editions",
                       "served_scheme_inference",
+                      "corpus_loci_disambiguated",
                       "ocr_quality_works",
                       "partial_ceilings",
                       "work_id_aliases",
