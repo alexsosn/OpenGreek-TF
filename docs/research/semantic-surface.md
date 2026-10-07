@@ -171,6 +171,11 @@ Primary optional structures are substantial rather than edge-only metadata:
 - `bekker`: 5,727 rows, arrays of 1–9 values;
 - `section`: 2,942 rows and `figure`: 1,840 rows;
 - structured `merged_read`: 1,757 rows;
+  The row-level object records only the merged-read partner and
+  substitution/guess counts. Open Greek separately publishes every guessed token
+  position with its served reading and losing alternative(s) in
+  `data/duplicate_read_merge_guesses.json`; those alternatives are research
+  semantics, not discardable build provenance.
 - diplomatic/original `text_orig`: 1,226 rows;
 - `row_part`: 125 rows;
 - `base_locus`: 39 rows and `book`: 35 rows.
@@ -292,6 +297,7 @@ preserve versus what can remain build evidence:
 | `oga_duplicates_tlg_pta.json` | external identity/dedup relation; preserve as crosswalk evidence, never auto-merge. The pinned release currently has no live two-slug duplicates |
 | `collection_serving_map.json` | curated collection-to-served-parts relation used where no per-part TLG anchor exists; preserve/classify explicitly rather than treating the collection as an unserved gap |
 | `corpus_loci_warnings.json` | current citation/text-quality facts (dropped chars, collapsed/disambiguated loci, division repairs); expose irreducible work-level warnings natively, keep detailed repair mechanics as provenance where reconstructible |
+| `duplicate_read_merge_guesses.json` | native textual uncertainty: each record points to a served row/character offset and gives the served token plus rejected reading(s). A `merged_read.guessed` count alone is insufficient; the alternatives must be queryable without this JSON |
 | `corpus_editions.json`, `coverage.json` | derived/redundant validation views when the same facts are already represented from stronger authorities |
 | `served_scheme_inference.json` | derived citation classification; raw locus is authoritative. Any exposed class/scheme feature must be marked derived and must not turn mixed/edition-prefixed loci into invented section hierarchy |
 | `corpus_loci_disambiguated.json` | derived current citation relation for same-base distinct readings; preserve/validate the relation natively if TF exposes alternate-reading groups, rather than reparsing `~` suffixes heuristically |
