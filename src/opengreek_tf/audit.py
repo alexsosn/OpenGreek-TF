@@ -72,7 +72,13 @@ MAPPING_ARTIFACTS: dict[
         frozenset({"/editions"}),
         frozenset(
             {
+                "/best_source",
+                "/tags/*",
                 "/editions/*/source",
+                "/editions/*/provider",
+                "/editions/*/scheme",
+                "/editions/*/scheme_inferred",
+                "/editions/*/servable",
                 "/editions/*/license",
             }
         ),
