@@ -1,5 +1,7 @@
 name: Upstream semantic audit
 
+# Exact-head release audit gate for issue #2.
+
 on:
   pull_request:
     paths:
