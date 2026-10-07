@@ -80,6 +80,15 @@ Consequences:
 - upstream inference is useful evidence/validation but is itself derived from
   loci plus registry/inventory metadata.
 
+
+Open TEI same-locus collisions have an additional published relation:
+`data/corpus_loci_disambiguated.json`. Exact duplicate readings are collapsed
+upstream; distinct readings keep the first bare locus and later readings receive
+a deterministic `~<tag>` locus. The map records each base locus, the complete
+set of resulting loci, and whether the disambiguation basis is `recension`,
+`ordinal`, or `mixed`. Relocated rows also carry `base_locus` and, where
+available, a recension `witness`, but the map is the complete group-level view.
+
 ### Secondary witnesses
 
 `data/corpus_secondary/*.jsonl` is not disposable cache data. Upstream uses it
@@ -262,6 +271,7 @@ preserve versus what can remain build evidence:
 | `work_id_aliases.json` | redirect relation is native; rename script/note/source are historical provenance unless #3 gives them first-class history nodes |
 | `corpus_editions.json`, `coverage.json` | derived/redundant validation views when the same facts are already represented from stronger authorities |
 | `served_scheme_inference.json` | derived citation classification; raw locus is authoritative. Any exposed class/scheme feature must be marked derived and must not turn mixed/edition-prefixed loci into invented section hierarchy |
+| `corpus_loci_disambiguated.json` | derived current citation relation for same-base distinct readings; preserve/validate the relation natively if TF exposes alternate-reading groups, rather than reparsing `~` suffixes heuristically |
 | `tlg_crosswalk.json` | validation/backstop for external identifiers; current served anchors should follow the curated work-index result where they differ |
 | `corpus_catalog.tsv` | independent deterministic validation surface, not a second semantic authority |
 | `corpus_release.json` | build/release provenance, hashes and whole-corpus validation |
