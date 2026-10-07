@@ -52,6 +52,12 @@ jobs:
           /data/work_id_aliases.json
           /data/work_metadata_remaps.json
           /data/pseudo_author_attributions.json
+          /data/corpus_loci_warnings.json
+          /data/oga_duplicates_tlg_pta.json
+          /data/oga_dating_adjudication.json
+          /data/oga_dating_report.json
+          /data/oga_dating.json
+          /data/collection_serving_map.json
           EOF
           git -C upstream fetch --depth 1 --filter=blob:none origin             338aa27310b3cfe2588a993b4d113b503597d70f
           git -C upstream checkout --detach FETCH_HEAD
@@ -126,6 +132,15 @@ jobs:
                       "partial_ceiling_works",
                       "partial_ceiling_rule_exceptions",
                       "partial_ceiling_policy",
+                      "corpus_loci_warnings",
+                      "collection_serving_map",
+                      "oga_duplicates_tlg_pta",
+                      "oga_dating_report_resolved_no_registry_home",
+                      "oga_dating_report_conflicts",
+                      "oga_dating_report_adjudicated",
+                      "oga_dating_report_filled",
+                      "oga_dating_adjudication",
+                      "oga_dating_works",
                   }
               },
               "metadata_vocabularies": {
