@@ -72,16 +72,28 @@ jobs:
           assert primary["rows"] == 1_970_947, primary["rows"]
           assert report["metadata"]["work_index"]["records"] == 3909
 
+          def compact_vocabularies(vocabularies):
+              return {
+                  name: {
+                      "size": len(values),
+                      "values": values if len(values) <= 40 else values[:20],
+                  }
+                  for name, values in vocabularies.items()
+              }
+
           summary = {
               "text_families": {
                   name: {
                       "files": family["files"],
                       "rows": family["rows"],
                       "row_slug_mismatches": family["row_slug_mismatches"],
+                      "row_slug_mismatches_by_file": family["row_slug_mismatches_by_file"],
                       "duplicate_loci": family["duplicate_loci"],
+                      "duplicate_loci_by_file": family["duplicate_loci_by_file"],
                       "duplicate_record_keys": family["duplicate_record_keys"],
+                      "duplicate_record_keys_by_file": family["duplicate_record_keys_by_file"],
                       "paths": family["paths"],
-                      "vocabularies": family["vocabularies"],
+                      "vocabularies": compact_vocabularies(family["vocabularies"]),
                   }
                   for name, family in report["text_families"].items()
               },
@@ -113,14 +125,16 @@ jobs:
                   }
               },
               "metadata_vocabularies": {
-                  name: value["vocabularies"]
+                  name: compact_vocabularies(value["vocabularies"])
                   for name, value in report["metadata"].items()
                   if value.get("vocabularies")
               },
               "catalog": {
                   "rows": report["catalog"]["rows"],
                   "columns": report["catalog"]["columns"],
-                  "vocabularies": report["catalog"]["vocabularies"],
+                  "vocabularies": compact_vocabularies(
+                      report["catalog"]["vocabularies"]
+                  ),
               },
           }
           print("SEMANTIC_AUDIT_SUMMARY_BEGIN")
