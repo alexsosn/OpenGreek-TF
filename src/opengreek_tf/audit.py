@@ -6,7 +6,6 @@ import csv
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -118,14 +117,6 @@ MAPPING_ARTIFACTS: dict[
         frozenset(),
         frozenset({"/source", "/license"}),
     ),
-}
-
-# Curated or measured metadata that may affect research interpretation. These are
-# audited separately from the reader-facing WEMI index so #3 can decide whether
-# each fact belongs in TF semantics or provenance.
-OPTIONAL_MAPPING_ARTIFACTS: dict[
-    str, tuple[str, str | None, frozenset[str], frozenset[str]]
-] = {
     "ocr_quality_works": (
         "data/ocr_quality_report.json",
         "works",
@@ -156,18 +147,87 @@ OPTIONAL_MAPPING_ARTIFACTS: dict[
         frozenset(),
         frozenset(),
     ),
+    "oga_dating_works": (
+        "data/oga_dating.json",
+        "works",
+        frozenset(),
+        frozenset(
+            {
+                "/era",
+                "/is_temporary_work_date",
+                "/in_registry",
+                "/served",
+            }
+        ),
+    ),
+    "oga_dating_adjudication": (
+        "data/oga_dating_adjudication.json",
+        "decisions",
+        frozenset(),
+        frozenset({"/decision"}),
+    ),
+    "corpus_loci_warnings": (
+        "data/corpus_loci_warnings.json",
+        None,
+        frozenset(),
+        frozenset({"/edition"}),
+    ),
 }
 
-OPTIONAL_LIST_ARTIFACTS: dict[str, tuple[str, str]] = {
-    "partial_ceiling_works": ("data/partial_ceilings.json", "works"),
+# Curated or measured scholarly metadata required by the pinned release contract.
+# Missing files fail closed so a sparse/incomplete checkout cannot masquerade as
+# a complete semantic audit.
+LIST_ARTIFACTS: dict[
+    str, tuple[str, str, frozenset[str]]
+] = {
+    "partial_ceiling_works": (
+        "data/partial_ceilings.json",
+        "works",
+        frozenset(),
+    ),
     "partial_ceiling_rule_exceptions": (
         "data/partial_ceilings.json",
         "rule_exceptions",
+        frozenset(),
     ),
-    "work_id_aliases": ("data/work_id_aliases.json", "renames"),
+    "work_id_aliases": (
+        "data/work_id_aliases.json",
+        "renames",
+        frozenset(),
+    ),
+    "oga_dating_report_filled": (
+        "data/oga_dating_report.json",
+        "filled",
+        frozenset(),
+    ),
+    "oga_dating_report_adjudicated": (
+        "data/oga_dating_report.json",
+        "adjudicated",
+        frozenset({"/decision", "/applied", "/adjudicated"}),
+    ),
+    "oga_dating_report_conflicts": (
+        "data/oga_dating_report.json",
+        "conflicts",
+        frozenset(),
+    ),
+    "oga_dating_report_resolved_no_registry_home": (
+        "data/oga_dating_report.json",
+        "resolved_no_registry_home",
+        frozenset(),
+    ),
+    "oga_duplicates_tlg_pta": (
+        "data/oga_duplicates_tlg_pta.json",
+        "pairs",
+        frozenset({"/status", "/same_slug"}),
+    ),
+    "collection_serving_map": (
+        "data/collection_serving_map.json",
+        "collections",
+        frozenset(),
+    ),
 }
 
-OPTIONAL_OBJECT_ARTIFACTS: dict[str, tuple[str, str]] = {
+OBJECT_ARTIFACTS: dict[str, tuple[str, str]] = {
     "partial_ceiling_policy": ("data/partial_ceilings.json", "title_rule"),
 }
 
@@ -494,6 +554,7 @@ def _audit_list(
     source: Path,
     relative_path: str,
     collection_key: str,
+    vocabulary_paths: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     path = source / relative_path
     payload = _load_json(path)
@@ -504,7 +565,7 @@ def _audit_list(
         raise AuditError(
             f"metadata collection {collection_key!r} is not an array: {path}"
         )
-    census = _Census()
+    census = _Census(vocabulary_paths=vocabulary_paths)
     for value in values:
         census.observe_record(value)
     paths, vocabularies = census.render(len(values))
@@ -599,36 +660,6 @@ def _audit_catalog(source: Path) -> dict[str, Any]:
     }
 
 
-def _existing_optional_mapping_reports(source: Path) -> Iterable[tuple[str, dict[str, Any]]]:
-    for name, spec in OPTIONAL_MAPPING_ARTIFACTS.items():
-        relative_path, collection_key, wildcard_paths, vocabulary_paths = spec
-        if (source / relative_path).is_file():
-            yield (
-                name,
-                _audit_mapping(
-                    source,
-                    relative_path,
-                    collection_key,
-                    wildcard_paths,
-                    vocabulary_paths,
-                ),
-            )
-
-
-def _existing_optional_list_reports(source: Path) -> Iterable[tuple[str, dict[str, Any]]]:
-    for name, (relative_path, collection_key) in OPTIONAL_LIST_ARTIFACTS.items():
-        if (source / relative_path).is_file():
-            yield name, _audit_list(source, relative_path, collection_key)
-
-
-def _existing_optional_object_reports(
-    source: Path,
-) -> Iterable[tuple[str, dict[str, Any]]]:
-    for name, (relative_path, object_key) in OPTIONAL_OBJECT_ARTIFACTS.items():
-        if (source / relative_path).is_file():
-            yield name, _audit_named_object(source, relative_path, object_key)
-
-
 def audit_source(source: str | Path) -> dict[str, Any]:
     """Audit the complete currently recognized semantic surface deterministically."""
     root = Path(source).resolve()
@@ -660,9 +691,17 @@ def audit_source(source: str | Path) -> dict[str, Any]:
             wildcard_paths,
             vocabulary_paths,
         )
-    metadata.update(_existing_optional_mapping_reports(root))
-    metadata.update(_existing_optional_list_reports(root))
-    metadata.update(_existing_optional_object_reports(root))
+    for name, (relative_path, collection_key, vocabulary_paths) in (
+        LIST_ARTIFACTS.items()
+    ):
+        metadata[name] = _audit_list(
+            root,
+            relative_path,
+            collection_key,
+            vocabulary_paths,
+        )
+    for name, (relative_path, object_key) in OBJECT_ARTIFACTS.items():
+        metadata[name] = _audit_named_object(root, relative_path, object_key)
     metadata["corpus_release"] = _audit_release_manifest(root)
 
     return {
