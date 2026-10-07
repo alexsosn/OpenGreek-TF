@@ -134,6 +134,97 @@ work-id similarity alone. They remain outside the base 0.1 semantic surface
 unless a later issue proves exact compatibility and defines a separately
 versioned TF module/materializer.
 
+## Measured pinned-release census
+
+A complete audit of the pinned release (`corpus-2026-09-15.2`) has run successfully
+in GitHub Actions against the verified publishing commit.
+
+Text families:
+
+| family | files | rows |
+| --- | ---: | ---: |
+| primary `data/corpus` | 3,909 | 1,970,947 |
+| secondary `data/corpus_secondary` | 533 | 307,085 |
+| paratext `data/paratext` | 5 | 15,958 |
+
+The primary row core is complete: all 1,970,947 rows carry `text`, and the
+verified source-release counts agree with the release manifest. The audit found
+no primary filename-to-`urn` mismatch.
+
+Primary optional structures are substantial rather than edge-only metadata:
+
+- `corrections`: 149,619 rows, arrays of 1–4 correction stamps;
+- `cts`: 443,996 rows;
+- `text_lines`: 103,709 rows, up to 517 preserved physical lines;
+- structured `provenance`: 7,506 rows;
+- `page`: 9,180 rows and `ocr_dpi`: 9,106 rows;
+- source-specific `work`: 8,856 rows and `witness`: 7,388 rows;
+- `bekker`: 5,727 rows, arrays of 1–9 values;
+- `section`: 2,942 rows and `figure`: 1,840 rows;
+- structured `merged_read`: 1,757 rows;
+- diplomatic/original `text_orig`: 1,226 rows;
+- `row_part`: 125 rows;
+- `base_locus`: 39 rows and `book`: 35 rows.
+
+The upstream code establishes semantics for several of these fields. `text_orig`
+is a diplomatic layer retained beside a regularized SAWS reading. `text_lines`
+preserves source physical line boundaries where joining those lines yields the
+served text. `row_part` records deliberate splitting of a source row (including
+Greek retained after Latin spans move to paratext). `merged_read` records
+evidence/guesses when duplicate OCR reads are merged. These cannot be treated as
+opaque incidental JSON if the TF corpus is to preserve the source semantics.
+
+Secondary rows use two displacement conventions. 306,674 of 307,085 rows carry
+`rank=secondary` plus `secondary_reason`; the remaining 411 rows carry a
+structured `displaced_by` block. 15,926 rows carry an explicit `witness` and
+5,031 retain correction stamps. This confirms that a secondary file is not one
+uniform alternate-edition record type.
+
+Paratext uses languages `de`, `en`, `fr`, `grc`, `la`, and `xx`.
+Observed classes are `edition_apparatus`, `latin_in_greek_script`, and
+`recovered_pending_merge`; 56 rows carry `why_not_served`, and 57 mixed-row
+records carry `script` plus `greek_remaining_in_this_row`. The page key is a
+string here, unlike the integer `page` found in some corpus rows.
+
+Identity/metadata cardinalities:
+
+- 3,944 persistent work ids = 3,909 served expressions plus 35 retired ids;
+- 1,516 persistent author ids = 1,500 active plus 16 retired;
+- 3,909 reader-facing work-index records and 6 redirects;
+- 11,075 source-registry works and 3,315 source-registry authors;
+- 10,202 edition records nested under registry works;
+- 23,254 registry tag occurrences, over the controlled dimensions `era`,
+  `century`, `register`, `genre`, `dialect`, and `language`;
+- 3,454 TLG/CTS crosswalk entries;
+- 1,412 OCR-quality work records, including 196 structured primary/secondary
+  witness-comparison blocks;
+- 4 explicit work-level partial-ceiling records in the pinned release;
+- 6 curated one-to-one historical work renames.
+
+The work index gives all 3,909 served expressions an `ogc` id and author block.
+External Work anchors remain incomplete by design: CTS is present for 3,339
+expressions, bare TLG for 3,300, and work-level Wikidata for 517. Author
+authorities have substantially better coverage (2,881 Wikidata, 2,784 VIAF,
+2,742 GND, 2,418 ISNI occurrences on work-index author blocks). TF must preserve
+the Open Greek opaque ids as the canonical identities rather than choosing an
+external authority as a replacement key.
+
+The corpus catalog confirms four correction-status classes:
+`manual`, `auto-corrected`, `raw-ocr`, and `not-ocr`. OCR-quality
+`unattested_rate` is available for 1,406 of 1,412 OCR works, and witness
+agreement is measured only for a minority of works; these values are estimates
+with the epistemic limitations documented upstream.
+
+### Anomalies requiring classification, not normalization
+
+The first full run measured repeated loci and secondary filename/`urn`
+differences. Those aggregate counts are being re-run with per-file evidence
+before #2 is closed. They are not converter errors by definition: Open Greek
+already has explicit multipart-row, duplicate-read, displaced-witness and
+historical-key mechanisms. #3 must consume the classified evidence and preserve
+the source distinctions rather than deduplicating or renaming records by
+heuristic.
+
 ## Audit implementation plan
 
 The executable audit for #2 will scan the exact pinned checkout and emit a
