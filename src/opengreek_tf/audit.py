@@ -106,6 +106,12 @@ MAPPING_ARTIFACTS: dict[
         frozenset(),
         frozenset(),
     ),
+    "corpus_loci_disambiguated": (
+        "data/corpus_loci_disambiguated.json",
+        None,
+        frozenset({"/"}),
+        frozenset({"/*/basis"}),
+    ),
     "coverage": (
         "data/coverage.json",
         None,
@@ -259,8 +265,10 @@ class _Census:
 
     def observe_record(self, record: Any) -> None:
         if isinstance(record, dict):
+            root_wildcard = "/" in self.wildcard_object_paths
             for key in sorted(record):
-                self.observe(record[key], f"/{key}")
+                path = "/*" if root_wildcard else f"/{key}"
+                self.observe(record[key], path)
         else:
             self.observe(record, "/value")
 
