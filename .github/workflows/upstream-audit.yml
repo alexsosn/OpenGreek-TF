@@ -53,6 +53,7 @@ jobs:
           /data/work_metadata_remaps.json
           /data/pseudo_author_attributions.json
           /data/corpus_loci_warnings.json
+          /data/duplicate_read_merge_guesses.json
           /data/oga_duplicates_tlg_pta.json
           /data/oga_dating_adjudication.json
           /data/oga_dating_report.json
@@ -133,6 +134,7 @@ jobs:
                       "partial_ceiling_rule_exceptions",
                       "partial_ceiling_policy",
                       "corpus_loci_warnings",
+                      "duplicate_read_merge_guesses",
                       "collection_serving_map",
                       "oga_duplicates_tlg_pta",
                       "oga_dating_report_resolved_no_registry_home",
