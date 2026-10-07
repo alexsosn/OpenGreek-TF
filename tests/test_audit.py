@@ -263,6 +263,141 @@ def _fixture(root: Path) -> None:
         },
     )
     _json(
+        root / "data/ocr_quality_report.json",
+        {
+            "works": {
+                "author.work": {
+                    "unattested_rate": 0.01,
+                    "witness": {
+                        "secondary_edition": "ed-b",
+                        "agreement": 0.9,
+                    },
+                }
+            }
+        },
+    )
+    _json(
+        root / "data/serving_deficits.json",
+        {"_meta": {"description": "fixture"}, "works": {}},
+    )
+    _json(
+        root / "data/work_id_aliases.json",
+        {
+            "_meta": {"description": "fixture"},
+            "renames": [
+                {
+                    "from": "old.work",
+                    "to": "author.work",
+                    "source": "fixture",
+                    "note": "rename",
+                }
+            ],
+        },
+    )
+    _json(
+        root / "data/oga_dating.json",
+        {
+            "_meta": {"description": "fixture"},
+            "works": {
+                "tlg1.tlg1": {
+                    "title": "Work",
+                    "author": "Author",
+                    "estimated_work_date": "150 CE",
+                    "formatted_work_date": "+0101-01/+0200-12",
+                    "date_label": "p2_1/p2_2",
+                    "is_temporary_work_date": False,
+                    "date_source": "source",
+                    "date_source_link": "https://example.invalid/date",
+                    "comment": "",
+                    "century": 2,
+                    "era": "imperial",
+                    "century_from_label": 2,
+                    "cog_slug": "author.work",
+                    "in_registry": True,
+                    "served": True,
+                }
+            },
+        },
+    )
+    _json(
+        root / "data/oga_dating_adjudication.json",
+        {
+            "_meta": {"description": "fixture"},
+            "decisions": {
+                "author.work": {
+                    "urn": "tlg1.tlg1",
+                    "decision": "c",
+                    "cog_century": [1],
+                    "oga_century": 2,
+                    "basis": "disputed",
+                }
+            },
+        },
+    )
+    _json(
+        root / "data/oga_dating_report.json",
+        {
+            "_meta": {"description": "fixture"},
+            "filled": [],
+            "adjudicated": [
+                {
+                    "urn": "tlg1.tlg1",
+                    "slug": "author.work",
+                    "decision": "c",
+                    "readings": [
+                        {"century": [1], "source": "cog"},
+                        {"century": 2, "source": "oga"},
+                    ],
+                }
+            ],
+            "conflicts": [],
+            "resolved_no_registry_home": [],
+        },
+    )
+    _json(
+        root / "data/oga_duplicates_tlg_pta.json",
+        {
+            "_meta": {"description": "fixture"},
+            "pairs": [
+                {
+                    "tlg": "tlg1.tlg1",
+                    "pta": "pta1.pta1",
+                    "tlg_slug": "author.work",
+                    "tlg_served": True,
+                    "pta_slug": "author.work",
+                    "pta_served": True,
+                    "same_slug": True,
+                    "status": "same-slug",
+                }
+            ],
+        },
+    )
+    _json(
+        root / "data/collection_serving_map.json",
+        {
+            "comment": "fixture",
+            "collections": [
+                {
+                    "tlg_id": "tlg1",
+                    "work_id": "001",
+                    "title": "Collection",
+                    "served_prefixes": ["author."],
+                    "evidence": "fixture",
+                    "date": "2026-01-01",
+                }
+            ],
+        },
+    )
+    _json(
+        root / "data/corpus_loci_warnings.json",
+        {
+            "author.work": {
+                "edition": "ed-a",
+                "disambiguated_dup_loci": 1,
+            }
+        },
+    )
+    _json(
         root / "data/corpus_release.json",
         {
             "release_id": "fixture",
@@ -344,6 +479,15 @@ def test_audit_wildcards_registry_editions_and_counts_identity_ledgers(
     assert report["metadata"]["partial_ceiling_works"]["records"] == 1
     assert report["metadata"]["partial_ceiling_rule_exceptions"]["records"] == 1
     assert report["metadata"]["partial_ceiling_policy"]["records"] == 1
+    assert report["metadata"]["ocr_quality_works"]["records"] == 1
+    assert report["metadata"]["serving_deficits"]["records"] == 0
+    assert report["metadata"]["work_id_aliases"]["records"] == 1
+    assert report["metadata"]["oga_dating_works"]["records"] == 1
+    assert report["metadata"]["oga_dating_adjudication"]["records"] == 1
+    assert report["metadata"]["oga_dating_report_adjudicated"]["records"] == 1
+    assert report["metadata"]["oga_duplicates_tlg_pta"]["records"] == 1
+    assert report["metadata"]["collection_serving_map"]["records"] == 1
+    assert report["metadata"]["corpus_loci_warnings"]["records"] == 1
 
 
 def test_audit_records_exact_source_edition_license_vocabularies(tmp_path: Path) -> None:
@@ -365,6 +509,15 @@ def test_audit_records_exact_source_edition_license_vocabularies(tmp_path: Path)
     assert registry["vocabularies"]["/editions/*/scheme_inferred"] == ["False"]
     assert registry["vocabularies"]["/editions/*/servable"] == ["True"]
     assert registry["vocabularies"]["/editions/*/source"] == ["first1k"]
+    assert report["metadata"]["oga_dating_works"]["vocabularies"]["/era"] == [
+        "imperial"
+    ]
+    assert report["metadata"]["oga_dating_adjudication"]["vocabularies"][
+        "/decision"
+    ] == ["c"]
+    assert report["metadata"]["oga_duplicates_tlg_pta"]["vocabularies"][
+        "/status"
+    ] == ["same-slug"]
 
 
 def test_audit_detects_duplicate_loci_and_row_slug_mismatch(tmp_path: Path) -> None:
@@ -456,3 +609,13 @@ def test_paratext_duplicate_key_uses_paratext_identity_fields(tmp_path: Path) ->
 
     assert paratext["duplicate_record_keys"] == 0
     assert paratext["duplicate_record_keys_by_file"] == {}
+
+
+def test_audit_fails_closed_when_required_semantic_metadata_is_missing(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path)
+    (tmp_path / "data/oga_dating.json").unlink()
+
+    with pytest.raises(AuditError, match="oga_dating.json"):
+        audit_source(tmp_path)
