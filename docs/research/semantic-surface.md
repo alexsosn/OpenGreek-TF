@@ -210,6 +210,25 @@ Identity/metadata cardinalities:
 - 4 explicit work-level partial-ceiling records in the pinned release;
 - 6 curated one-to-one historical work renames.
 
+Open Greek also carries a separate multi-source chronology layer. OGA chronology
+stores the original estimated date/range, date label, source/link, temporary-date
+flag, derived century/era, resolution to a cog slug, and whether the work is
+served. The applied report records 122 registry fills, 996 agreements, 466
+one-century disagreements left explicitly unresolved, and 39 larger divergences
+with curated decisions: 10 keep cog, 10 adopt OGA, and 19 remain disputed with
+both readings. Those alternative readings are absent from a single
+`century:<n>` registry tag, so TF must not collapse dating to that tag alone.
+
+The OGA PTA↔TLG duplicate map contains 90 external-id pairs in the pinned release:
+79 have only one side served and 11 already resolve to the same slug; there are
+no live two-slug duplicates. It is identity evidence, not a merge instruction.
+
+The curated collection-serving map currently contains two Libanius collection
+records whose TLG collection identities are served through many per-oration or
+per-declamation files without shared per-part TLG anchors. The relation is
+therefore distinct from ordinary work anchors and must not disappear merely
+because the coverage report can recompute token credit.
+
 The work index gives all 3,909 served expressions an `ogc` id and author block.
 External Work anchors remain incomplete by design: CTS is present for 3,339
 expressions, bare TLG for 3,300, and work-level Wikidata for 517. Author
@@ -269,11 +288,16 @@ preserve versus what can remain build evidence:
 | `work_metadata_remaps.json` | the resulting `metadata_from` relation is native; explanatory concordance evidence is provenance |
 | `pseudo_author_attributions.json` | resulting curated author/title attribution is native; evidentiary notes may remain provenance |
 | `work_id_aliases.json` | redirect relation is native; rename script/note/source are historical provenance unless #3 gives them first-class history nodes |
+| `oga_dating.json` + dating report/adjudication | native work-level chronology must retain the OGA date/range/label and source plus unresolved/disputed alternative readings; a single registry `century` tag is insufficient |
+| `oga_duplicates_tlg_pta.json` | external identity/dedup relation; preserve as crosswalk evidence, never auto-merge. The pinned release currently has no live two-slug duplicates |
+| `collection_serving_map.json` | curated collection-to-served-parts relation used where no per-part TLG anchor exists; preserve/classify explicitly rather than treating the collection as an unserved gap |
+| `corpus_loci_warnings.json` | current citation/text-quality facts (dropped chars, collapsed/disambiguated loci, division repairs); expose irreducible work-level warnings natively, keep detailed repair mechanics as provenance where reconstructible |
 | `corpus_editions.json`, `coverage.json` | derived/redundant validation views when the same facts are already represented from stronger authorities |
 | `served_scheme_inference.json` | derived citation classification; raw locus is authoritative. Any exposed class/scheme feature must be marked derived and must not turn mixed/edition-prefixed loci into invented section hierarchy |
 | `corpus_loci_disambiguated.json` | derived current citation relation for same-base distinct readings; preserve/validate the relation natively if TF exposes alternate-reading groups, rather than reparsing `~` suffixes heuristically |
 | `tlg_crosswalk.json` | validation/backstop for external identifiers; current served anchors should follow the curated work-index result where they differ |
 | `corpus_catalog.tsv` | independent deterministic validation surface, not a second semantic authority |
+| `source_overrides.json` and carve/change plans | source-selection/editorial provenance; the resulting current source/edition/work relations are native, but the build decision trail need not be duplicated into the semantic graph |
 | `corpus_release.json` | build/release provenance, hashes and whole-corpus validation |
 | separately released Open Greek annotation datasets | out of base 0.1 scope until exact token/text alignment and independent versioning are designed |
 
