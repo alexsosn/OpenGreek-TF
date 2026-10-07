@@ -225,6 +225,36 @@ historical-key mechanisms. #3 must consume the classified evidence and preserve
 the source distinctions rather than deduplicating or renaming records by
 heuristic.
 
+## Artifact classification for the schema phase
+
+The audit separates source artifacts by what the eventual materializer must
+preserve versus what can remain build evidence:
+
+| upstream artifact | classification for #3 |
+| --- | --- |
+| `data/corpus/*.jsonl` | native TF research semantics: served text, ordered passage identity, source-specific structural fields, corrections; provenance subfields may use provenance-only output if no research query depends on them |
+| `data/corpus_secondary/*.jsonl` | native TF research semantics: alternate/displaced textual witnesses and their witness/displacement relations; never flatten into primary slots without proved alignment |
+| `data/paratext/*.jsonl` | native TF research semantics: non-primary textual material with language/class/exclusion semantics |
+| `work_index.json` | primary current identity/WEMI authority for served expressions, authors, external anchors, manifestation and redirects |
+| served subset of `source_registry.json` | native scholarly metadata not present in work_index, especially controlled tags and edition bibliography/scheme metadata |
+| `work_ids.json` / `author_ids.json` | canonical opaque identity ledgers; served ids are native identity, redirects are queryable; retired tombstones/history require an explicit #3 decision |
+| `ocr_quality_report.json` | researcher-facing quality evidence with documented uncertainty; represent work-level facts natively if retained, methodology as provenance/documentation |
+| `partial_ceilings.json` / serving deficits | curated completeness limitations; explicit work-level limitations are research metadata, while general matching policy/methodology is provenance/documentation |
+| `work_metadata_remaps.json` | the resulting `metadata_from` relation is native; explanatory concordance evidence is provenance |
+| `pseudo_author_attributions.json` | resulting curated author/title attribution is native; evidentiary notes may remain provenance |
+| `work_id_aliases.json` | redirect relation is native; rename script/note/source are historical provenance unless #3 gives them first-class history nodes |
+| `corpus_editions.json`, `coverage.json` | derived/redundant validation views when the same facts are already represented from stronger authorities |
+| `served_scheme_inference.json` | derived citation classification; raw locus is authoritative. Any exposed class/scheme feature must be marked derived and must not turn mixed/edition-prefixed loci into invented section hierarchy |
+| `tlg_crosswalk.json` | validation/backstop for external identifiers; current served anchors should follow the curated work-index result where they differ |
+| `corpus_catalog.tsv` | independent deterministic validation surface, not a second semantic authority |
+| `corpus_release.json` | build/release provenance, hashes and whole-corpus validation |
+| separately released Open Greek annotation datasets | out of base 0.1 scope until exact token/text alignment and independent versioning are designed |
+
+This classification is intentionally asymmetric. A value can be reproducible
+and still be worth exposing in TF (for example a derived citation class), but a
+derived summary must not become the source from which stronger primary facts are
+reconstructed.
+
 ## Audit implementation plan
 
 The executable audit for #2 will scan the exact pinned checkout and emit a
