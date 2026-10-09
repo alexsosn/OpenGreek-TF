@@ -262,18 +262,52 @@ while leaving the row's work `urn` intact. Thus a secondary filename can name a
 witness container while `urn` names the work it witnesses. #3 needs separate
 work identity and witness/container identity.
 
-Repeated primary loci still require per-file classification. The open-TEI
-builder explicitly resolves its own same-locus collisions: exact repeats are
-collapsed and distinct readings receive deterministic disambiguated loci plus
-`base_locus` and optional recension `witness`. Therefore any remaining
-same-locus groups in the complete primary corpus arise outside that already
-disambiguated path or from later/source-specific transformations and must be
-inspected before a uniqueness invariant is assumed.
+The second complete audit, at PR head `fb50418c43ad877bf9823a2f6ac9ea41b859f03f`,
+measured the following anomalous-key distribution. These counts describe
+repeated **source labels**, not repeated text or invalid identities:
 
-Neither class is a converter error by definition. Open Greek has explicit
-multipart-row, duplicate-read, displaced-witness and historical-key mechanisms.
-#3 must consume the classified evidence and preserve the source distinctions
-rather than deduplicating or renaming records by heuristic.
+| family | repeated `locus` | repeated composite keys | filename ≠ row `urn` |
+| --- | ---: | ---: | ---: |
+| primary | 4,222 | 1,076 | 0 |
+| secondary | 73 | 54 | 10,513 |
+| paratext | not locus-keyed | 0 under its family-specific key | not applicable |
+
+Primary repeated loci are concentrated in
+`proclus.in-platonis-timaeum-commentaria.jsonl` (2,415),
+`apollodorus-atheniensis.fragmenta.jsonl` (794), and
+`heraclides-ponticus.fragmenta.jsonl` (90). In the directly inspected
+DFHG-derived `apollodorus-atheniensis.fragmenta` rows, the
+locus `1.2` appears twice with different passages: one is the initial
+Bibliotheca section, the next occurs after `1.1.1`–`1.1.4`.
+In the directly inspected `heraclides-ponticus.fragmenta` rows, the
+locus `2.1` occurs again on a different printed page with a different
+political fragment. This is an upstream source label that is **not unique at
+the work level**, and must not be treated as a primary passage ID.
+
+The open-TEI builder explicitly resolves its own same-locus collisions:
+exact repeats collapse and distinct readings get deterministic disambiguated
+loci with `base_locus` and optional `witness`. The remaining repeated
+labels occur in other source paths or later transformations; the precise
+origins of every repeated `proclus` label are not established by this audit.
+An upstream-source-specific audit should classify them before any feature
+claims a universal *citable* identity. The TF graph, however, can already
+preserve every record by using a deterministic source file + physical row
+ordinal **as an occurrence identity**, while retaining the unchanged
+`locus` as scholarly citation metadata. No grouping/collapsing is permitted.
+
+Secondary `heraclides-ponticus.fragmenta-fhg2` similarly repeats `2.1`
+across distinct printed pages and passages; the upstream
+`secondary_reason` identifies the file as a displaced, stale DFHG carve.
+The secondary `theognostus.canones-sive-de-orthographia.duplicate-read` file
+illustrates the filename/URN distinction: its rows still have
+`urn=theognostus.canones-sive-de-orthographia`, while the filename marks an
+alternate OCR-reading container. Retain both identities and source order.
+
+Neither anomaly class authorizes the converter to remove text, rewrite labels,
+or infer passage equivalence. The TF schema must represent **occurrences**
+and **source-declared citation labels** separately; uniqueness is guaranteed
+by source occurrence position rather than by `locus`. All in-scope rows must
+be conserved independently of their labels.
 
 ## Artifact classification for the schema phase
 
