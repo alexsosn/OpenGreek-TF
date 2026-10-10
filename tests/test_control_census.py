@@ -95,7 +95,7 @@ def test_sample_cap_does_not_cap_census_or_drop_field_paths(tmp_path: Path) -> N
 def test_empty_census_and_invalid_sample_limit(tmp_path: Path) -> None:
     _fixture(tmp_path)
     clean = count_controls(
-        (row for row in iter_family(tmp_path, "primary") if row.ordinal == 2)
+        row for row in iter_family(tmp_path, "primary") if row.ordinal == 2
     )
     assert clean.records_by_family == {"primary": 1}
     assert clean.occurrences_by_codepoint == {}
