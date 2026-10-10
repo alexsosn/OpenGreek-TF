@@ -6,13 +6,13 @@ import json
 from pathlib import Path
 
 import pytest
+from opengreek_tf.record_stream import ParsedRecord, parse_file
 from tf.fabric import Fabric  # type: ignore[import-untyped]
 
 from opengreek_tf.mini_writer import (
     UnsupportedSourceStructure,
     write_primary_probe,
 )
-from opengreek_tf.record_stream import ParsedRecord, parse_file
 from opengreek_tf.text_runs import segment_runs
 
 
