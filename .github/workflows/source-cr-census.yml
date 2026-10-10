@@ -3,6 +3,8 @@ name: Pinned source carriage-return census
 on:
   pull_request:
     paths:
+      - "src/opengreek_tf/ci_source_cache.py"
+      - "tests/test_ci_source_cache.py"
       - "src/opengreek_tf/source_controls.py"
       - "tests/test_source_controls.py"
       - "docs/research/tf-cr-controls.md"
@@ -19,23 +21,23 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e .
-      - name: Checkout pinned source text families
+      - name: Prepare fresh pinned Git origin and exact text-family scope
+        id: scope
+        run: python -m opengreek_tf.ci_source_cache prepare upstream
+      - name: Restore existing verified Git objects (read-only consumer)
+        id: objects
+        uses: actions/cache/restore@v4
+        with:
+          path: upstream/.git/objects
+          key: ${{ steps.scope.outputs.key }}
+      - name: Acquire and independently verify immutable text families
         shell: bash
+        env:
+          SOURCE_CACHE_HIT: ${{ steps.objects.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          mkdir upstream
-          git -C upstream init --quiet
-          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
-          git -C upstream sparse-checkout init --no-cone
-          cat > upstream/.git/info/sparse-checkout <<'EOF'
-          /data/corpus_release.json
-          /data/corpus/
-          /data/corpus_secondary/
-          /data/paratext/
-          EOF
-          git -C upstream fetch --depth 1 --filter=blob:none origin \
-            338aa27310b3cfe2588a993b4d113b503597d70f
-          git -C upstream checkout --detach FETCH_HEAD
+          python -m opengreek_tf.ci_source_cache checkout upstream \
+            --cache-hit "$SOURCE_CACHE_HIT"
       - name: Scan every source field without modifying any source fact
         shell: python
         run: |
