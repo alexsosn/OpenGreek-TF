@@ -172,3 +172,42 @@ def test_duplicate_selection_fails_closed(ledger_root: Path, tmp_path: Path) -> 
             authors=("oga000001", "oga000001"),
             works=("ogc000772",),
         )
+
+
+def test_no_former_slug_selection_emits_no_phantom_alias_features(
+    ledger_root: Path, tmp_path: Path,
+) -> None:
+    """TF 13.1 rejects metadata declarations for absent optional features."""
+    out = tmp_path / "no-alias"
+    write_registry_probe(
+        ledger_root, out, authors=("oga000001", "oga000330"),
+        works=("ogc000839",),
+    )
+    result = read_registry_probe(out)
+    assert tuple(r.identifier for r in result) == (
+        "oga000001", "oga000330", "ogc000839",
+    )
+    assert all(r.former_slugs == () for r in result)
+    assert not (out / "alias_value.tf").exists()
+    assert not (out / "has_former_slug.tf").exists()
+
+
+def test_repeated_identical_former_slug_values_preserve_multiplicity(
+    ledger_root: Path, tmp_path: Path,
+) -> None:
+    work_path = ledger_root / "data" / "work_ids.json"
+    data = json.loads(work_path.read_text(encoding="utf-8"))
+    data["works"]["ogc000772"]["former_slugs"] = ["prior-slug", "prior-slug"]
+    work_path.write_text(json.dumps(data), encoding="utf-8")
+    destination = tmp_path / "repeated"
+    write_registry_probe(
+        ledger_root, destination, authors=(), works=("ogc000772",),
+    )
+    decoded = read_registry_probe(destination)
+    assert len(decoded) == 1
+    assert decoded[0].former_slugs == ("prior-slug", "prior-slug")
+    api = Fabric(locations=str(destination), silent="deep").load(
+        "alias_value alias_position has_former_slug", silent="deep",
+    )
+    assert api
+    assert len(api.F.otype.s("formerSlug")) == 2
