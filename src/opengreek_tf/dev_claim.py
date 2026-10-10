@@ -147,6 +147,8 @@ def assess(
     now: datetime,
     *,
     token: str | None = None,
+    actor: str | None = None,
+    own_pr_number: int | None = None,
 ) -> Decision:
     """Independently inspect complete live snapshots; oldest active comment wins."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -159,6 +161,14 @@ def assess(
             number = pr.get("number")
             if type(number) is not int or number < 1:
                 raise ClaimError("linked open PR missing valid number")
+            owner = pr.get("user")
+            author = owner.get("login") if isinstance(owner, dict) else None
+            if (
+                actor is not None
+                and own_pr_number == number
+                and actor == author
+            ):
+                continue
             active_prs.add(number)
     if active_prs:
         ids = tuple(sorted(active_prs))
@@ -170,7 +180,9 @@ def assess(
     if not candidates:
         return Decision(True, "unclaimed", ())
     winner = min(candidates, key=lambda c: (c.comment_id, c.created_at))
-    if token is not None and token == winner.token:
+    if token is not None and token == winner.token and (
+        actor is None or actor == winner.author
+    ):
         return Decision(True, "current token holds advisory lease", (), winner)
     return Decision(False, f"claimed by {winner.author} (comment {winner.comment_id})",
                     (), winner)
@@ -281,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default="alexsosn/OpenGreek-TF")
     parser.add_argument("--issue", required=True, type=int)
     parser.add_argument("--token", help="previously issued advisory lease token")
+    parser.add_argument("--own-pr", type=int,
+                        help="exempt only this PR, if its author is the verified actor")
     parser.add_argument("--lease-minutes", type=int, default=30)
     args = parser.parse_args(argv)
     try:
@@ -307,7 +321,10 @@ def main(argv: list[str] | None = None) -> int:
             _emit(result)
             return 0 if result.allowed else 2
 
-        decision = assess(args.issue, state, prs, comments, now, token=args.token)
+        actor = _actor(api) if args.token or args.own_pr is not None else None
+        decision = assess(args.issue, state, prs, comments, now,
+                          token=args.token, actor=actor,
+                          own_pr_number=args.own_pr)
         if args.action == "check":
             _emit(decision)
             return 0 if decision.allowed else 2
@@ -328,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ClaimError("GitHub did not confirm the new lease comment")
         state, prs, comments = api.snapshot(args.issue)
         decision = assess(args.issue, state, prs, comments, datetime.now(UTC),
-                          token=new_token)
+                          token=new_token, actor=actor, own_pr_number=args.own_pr)
         if not decision.allowed or not decision.winning_claim or (
             decision.winning_claim.comment_id != posted["id"]
         ):
