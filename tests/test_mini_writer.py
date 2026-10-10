@@ -37,7 +37,7 @@ def _row(text: str, locus: str = "1", **extra: object) -> dict[str, object]:
 def test_native_tf_preserves_repeated_loci_empty_text_and_exact_slots(
     tmp_path: Path,
 ) -> None:
-    texts = ["  λόγος· \tκόσμος\r\n", "", "α\u0301  ἕτερον"]
+    texts = ["  λόγος· \tκόσμος\n", "", "α\u0301  ἕτερον"]
     rows = _source(
         tmp_path,
         [
@@ -138,3 +138,25 @@ def test_writer_rejects_secondary_layer_without_inventing_alignment(
     with pytest.raises(UnsupportedSourceStructure, match="primary"):
         write_primary_probe([secondary], destination)
     assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"text": "λόγος\r\nἄλλος"},
+        {"text": "λόγος\rἄλλος"},
+        {"work": "ΕΡΓΟΝ\rΔΕΥΤΕΡΟΝ"},
+    ],
+)
+def test_writer_rejects_unroundtrippable_carriage_return(
+    tmp_path: Path, changes: dict[str, str]
+) -> None:
+    # TF 13.1 text-feature encoding escapes LF and TAB but not CR, while its
+    # default text reader has universal newline semantics.
+    row = _row("λόγος")
+    row.update(changes)
+    records = _source(tmp_path, [row])
+    dest = tmp_path / "tf"
+    with pytest.raises(UnsupportedSourceStructure, match="carriage return"):
+        write_primary_probe(records, dest)
+    assert not dest.exists()
