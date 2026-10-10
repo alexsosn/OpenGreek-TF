@@ -230,6 +230,8 @@ def _object_no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, obje
 
 def _family_for(relative_file: str) -> Family:
     path = Path(relative_file)
+    if path.as_posix() != relative_file:
+        raise RecordParseError(f"noncanonical source path: {relative_file!r}")
     parts = path.parts
     if (
         path.is_absolute()
@@ -255,9 +257,15 @@ def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
     required = REQUIRED[family]
 
     try:
-        with file_path.open(encoding="utf-8", errors="strict") as source:
-            for ordinal, line in enumerate(source, start=1):
+        with file_path.open("rb") as source:
+            for ordinal, raw_line in enumerate(source, start=1):
                 context = f"{relative_file}:{ordinal}"
+                try:
+                    line = raw_line.decode("utf-8", errors="strict")
+                except UnicodeDecodeError as exc:
+                    raise RecordParseError(
+                        f"{context}: invalid UTF-8 source line"
+                    ) from exc
                 if not line.strip():
                     raise RecordParseError(f"{context}: blank JSONL row")
                 try:
@@ -297,6 +305,8 @@ def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
 
 def iter_family(root: Path, family: Family) -> Iterator[ParsedRecord]:
     """Yield all source rows in deterministic filename/physical-row order."""
+    if family not in FAMILY_DIR:
+        raise RecordParseError(f"unsupported source family: {family!r}")
     directory = Path(root) / "data" / FAMILY_DIR[family]
     if not directory.is_dir():
         raise RecordParseError(f"missing audited source directory: {directory}")
