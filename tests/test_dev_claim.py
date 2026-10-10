@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+
+import opengreek_tf.dev_claim as protocol
 
 from opengreek_tf.dev_claim import (
     ClaimError,
@@ -180,3 +183,65 @@ def test_another_active_pr_still_blocks_even_with_own_pr_exemption() -> None:
                      actor="alice", own_pr_number=38)
     assert not blocked.allowed
     assert blocked.active_pr_numbers == (39,)
+
+
+@pytest.mark.parametrize("racing_worker", [False, True])
+def test_cli_rechecks_posted_claim_and_relinquishes_if_race_lost(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    racing_worker: bool,
+) -> None:
+    class FakeAPI:
+        def __init__(self, repo: str, token: str | None = None) -> None:
+            assert repo == "alexsosn/OpenGreek-TF" and token == "fake-test-token"
+            self.posted_body: str | None = None
+            self.released: list[str] = []
+
+        def snapshot(
+            self, issue: int
+        ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
+            assert issue == 37
+            comments: list[dict[str, Any]] = []
+            if self.posted_body:
+                created = datetime.now(UTC)
+                if racing_worker:
+                    comments.append({
+                        "id": 20,
+                        "created_at": created.isoformat(),
+                        "user": {"login": "bob"},
+                        "body": claim_body(37, "rival-token",
+                                           created + timedelta(minutes=10)),
+                    })
+                comments.append({
+                    "id": 21,
+                    "created_at": created.isoformat(),
+                    "user": {"login": "alice"},
+                    "body": self.posted_body,
+                })
+            return "open", [], comments
+
+        def get(self, path: str) -> dict[str, str]:
+            assert path == "/user"
+            return {"login": "alice"}
+
+        def post(self, path: str, payload: dict[str, Any]) -> dict[str, int]:
+            assert path == "/issues/37/comments"
+            assert isinstance(payload["body"], str)
+            self.posted_body = payload["body"]
+            return {"id": 21}
+
+        def patch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+            assert path == "/issues/comments/21"
+            self.released.append(path)
+            return payload
+
+    api = FakeAPI("alexsosn/OpenGreek-TF", "fake-test-token")
+    monkeypatch.setenv("GITHUB_TOKEN", "fake-test-token")
+    monkeypatch.setattr(protocol, "GithubAPI", lambda repo, token: api)
+    code = protocol.main(["claim", "--issue", "37"])
+    report = json.loads(capsys.readouterr().out)
+    assert code == (2 if racing_worker else 0)
+    assert report["allowed"] is (not racing_worker)
+    assert len(api.released) == int(racing_worker)
+    if not racing_worker:
+        assert report["your_token"]
