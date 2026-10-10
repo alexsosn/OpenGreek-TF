@@ -218,3 +218,30 @@ def test_unexpected_family_and_incompatible_page_type(tmp_path: Path) -> None:
         list(parse_file(tmp_path, rel))
     with pytest.raises(RecordParseError, match="unsupported"):
         list(parse_file(tmp_path, "data/unknown/notes.jsonl"))
+
+
+def test_invalid_utf8_fails_with_physical_source_row(tmp_path: Path) -> None:
+    rel = "data/corpus/w.jsonl"
+    file = tmp_path / rel
+    file.parent.mkdir(parents=True)
+    file.write_bytes(b'{"urn":"w","text":"\xff"}\n')
+    with pytest.raises(RecordParseError) as exc:
+        list(parse_file(tmp_path, rel))
+    assert f"{rel}:1" in str(exc.value)
+    assert "UTF-8" in str(exc.value)
+
+
+def test_noncanonical_file_identity_and_invalid_family_fail_closed(
+    tmp_path: Path,
+) -> None:
+    rel = _source(
+        tmp_path,
+        "primary",
+        "w",
+        ['{"urn":"w","edition":"e","locus":"1","source":"s",'
+         '"license":"PD","text":"x"}'],
+    )
+    with pytest.raises(RecordParseError, match="noncanonical"):
+        list(parse_file(tmp_path, rel.replace("corpus/", "corpus/./")))
+    with pytest.raises(RecordParseError, match="unsupported"):
+        list(iter_family(tmp_path, "nonexistent"))  # type: ignore[arg-type]
