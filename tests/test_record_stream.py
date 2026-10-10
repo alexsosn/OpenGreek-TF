@@ -245,3 +245,45 @@ def test_noncanonical_file_identity_and_invalid_family_fail_closed(
         list(parse_file(tmp_path, rel.replace("corpus/", "corpus/./")))
     with pytest.raises(RecordParseError, match="unsupported"):
         list(iter_family(tmp_path, "nonexistent"))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("extra_fields", "failure"),
+    [
+        ('"rank":"secondary"', "secondary_reason"),
+        ('"secondary_reason":"stale"', "rank"),
+        ('"displaced_by":{}', "displaced_by"),
+        ('"displaced_by":{"date":"2026","pass":"replace","reason":"x"},'
+         '"rank":"secondary","secondary_reason":"other"', "displaced_by"),
+    ],
+)
+def test_secondary_witness_variant_must_be_complete(
+    tmp_path: Path, extra_fields: str, failure: str
+) -> None:
+    body = (
+        '{"urn":"w","edition":"e","locus":"1","source":"s","license":"PD",'
+        '"text":"x",' + extra_fields + "}"
+    )
+    rel = _source(tmp_path, "secondary", "w", [body])
+    with pytest.raises(RecordParseError, match=failure):
+        list(parse_file(tmp_path, rel))
+
+
+@pytest.mark.parametrize(
+    "merged",
+    [
+        '{"guessed":1}',
+        '{"guesses":1,"note":"x"}',
+        '{"guessed":1,"substituted":2,"with":["x"],"guesses":0}',
+    ],
+)
+def test_partial_or_mixed_merged_read_variants_rejected(
+    tmp_path: Path, merged: str
+) -> None:
+    body = (
+        '{"urn":"w","edition":"e","locus":"1","source":"s","license":"PD",'
+        '"text":"x","merged_read":' + merged + "}"
+    )
+    rel = _source(tmp_path, "primary", "w", [body])
+    with pytest.raises(RecordParseError, match="merged_read"):
+        list(parse_file(tmp_path, rel))
