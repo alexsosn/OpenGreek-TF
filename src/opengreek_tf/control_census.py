@@ -64,7 +64,8 @@ def _unsafe_control(codepoint: int) -> bool:
 
 
 def count_controls(
-    records: Iterable[ParsedRecord], *, sample_limit: int = 20,\n    on_occurrence: Callable[[ControlLocation], None] | None = None
+    records: Iterable[ParsedRecord], *, sample_limit: int = 20,
+    on_occurrence: Callable[[ControlLocation], None] | None = None
 ) -> ControlCensus:
     """Count controls in every nested string, preserving source/field offsets.
 
@@ -125,15 +126,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Scan a *local* pinned checkout; acquisition/verification is external."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="already acquired source checkout")
-    parser.add_argument("--sample-limit", type=int, default=20)\n    parser.add_argument(\n        "--locations-output", type=Path,\n        help="optional streamed JSONL of every control location",\n    )
+    parser.add_argument("--sample-limit", type=int, default=20)
+    parser.add_argument(
+        "--locations-output", type=Path,
+        help="optional streamed JSONL of every control location",
+    )
     args = parser.parse_args(argv)
     rows = chain.from_iterable(iter_family(args.source, family) for family in FAMILIES)
     if args.locations_output is not None:
         with args.locations_output.open("w", encoding="utf-8") as output:
             def record_location(location: ControlLocation) -> None:
-                output.write(json.dumps(asdict(location), sort_keys=True) + "\\n")
+                output.write(json.dumps(asdict(location), sort_keys=True) + "\n")
 
-            result = count_controls(\n                rows, sample_limit=args.sample_limit, on_occurrence=record_location\n            )
+            result = count_controls(
+                rows, sample_limit=args.sample_limit, on_occurrence=record_location
+            )
     else:
         result = count_controls(rows, sample_limit=args.sample_limit)
     print(json.dumps(result.as_report(), ensure_ascii=False, sort_keys=True))
