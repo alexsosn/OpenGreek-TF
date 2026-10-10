@@ -245,6 +245,47 @@ def _family_for(relative_file: str) -> Family:
     return DIR_FAMILY[parts[1]]
 
 
+
+def _validate_record_variants(
+    family: Family, fields: FieldObject, *, context: str
+) -> None:
+    """Enforce source-declared tagged field groups established by the audit."""
+    if family == "secondary":
+        displacement = fields.get("displaced_by")
+        rank = fields.get("rank")
+        reason = fields.get("secondary_reason")
+        if displacement is not None:
+            if rank is not None or reason is not None:
+                raise RecordParseError(
+                    f"{context}: displaced_by cannot coexist with rank/secondary_reason"
+                )
+            if not isinstance(displacement, FieldObject):
+                raise AssertionError("internal parser invariant: displaced_by object")
+            if {name for name, _ in displacement.items} != {"date", "pass", "reason"}:
+                raise RecordParseError(
+                    f"{context}: displaced_by must have date, pass and reason"
+                )
+        elif rank is None or reason is None:
+            missing = "rank" if rank is None else "secondary_reason"
+            raise RecordParseError(
+                f"{context}: secondary row missing {missing} or displaced_by"
+            )
+
+    if family == "primary":
+        merged = fields.get("merged_read")
+        if merged is not None:
+            if not isinstance(merged, FieldObject):
+                raise AssertionError("internal parser invariant: merged_read object")
+            keys = {name for name, _ in merged.items}
+            if keys not in (
+                {"guessed", "substituted", "with"},
+                {"guesses", "note", "of"},
+            ):
+                raise RecordParseError(
+                    f"{context}: merged_read must use one complete audited variant"
+                )
+
+
 def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
     """Lazily parse exactly one audited-family JSONL file.
 
@@ -293,11 +334,13 @@ def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
                             ),
                         )
                     )
+                checked_fields = FieldObject(tuple(fields))
+                _validate_record_variants(family, checked_fields, context=context)
                 yield ParsedRecord(
                     family=family,
                     relative_file=relative_file,
                     ordinal=ordinal,
-                    fields=FieldObject(tuple(fields)),
+                    fields=checked_fields,
                 )
     except (OSError, UnicodeError) as exc:
         raise RecordParseError(f"cannot read {relative_file}: {exc}") from exc
