@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tf.convert.walker import CV
-from tf.fabric import Fabric
+from tf.convert.walker import CV  # type: ignore[import-untyped]
+from tf.fabric import Fabric  # type: ignore[import-untyped]
 
 
 def test_source_atom_slots_preserve_unserved_entities_without_fake_words(
