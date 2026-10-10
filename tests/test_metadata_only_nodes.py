@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tf.convert.walker import CV
-from tf.fabric import Fabric
+from tf.convert.walker import CV  # type: ignore[import-untyped]
+from tf.fabric import Fabric  # type: ignore[import-untyped]
 
 
 def test_walker_removes_unlinked_metadata_entities(tmp_path: Path) -> None:
