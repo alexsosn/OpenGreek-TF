@@ -87,6 +87,49 @@ jobs:
               for cp, count in sorted(report["occurrences_by_codepoint"].items()):
                   summary.write(f"- `{cp}`: {count}\n")
           PY
+      - name: Independently crosscheck all Unicode controls from raw JSONL
+        shell: python
+        run: |
+          import json
+          import unicodedata
+          from collections import Counter
+          from pathlib import Path
+
+          def strings(value):
+              if isinstance(value, str):
+                  yield value
+              elif isinstance(value, list):
+                  for item in value:
+                      yield from strings(item)
+              elif isinstance(value, dict):
+                  for item in value.values():
+                      yield from strings(item)
+
+          counts = Counter()
+          affected = 0
+          crlf = 0
+          root = Path("upstream/data")
+          for directory in ("corpus", "corpus_secondary", "paratext"):
+              for path in sorted((root / directory).glob("*.jsonl")):
+                  with path.open("rb") as handle:
+                      for line in handle:
+                          row = json.loads(line)
+                          found = False
+                          for value in strings(row):
+                              crlf += value.count("\\r\\n")
+                              for char in value:
+                                  if unicodedata.category(char) == "Cc" and char not in "\\t\\n":
+                                      counts[f"U+{ord(char):04X}"] += 1
+                                      found = True
+                          affected += int(found)
+          observed = json.loads(Path("control-summary.json").read_text())
+          assert dict(sorted(counts.items())) == observed["occurrences_by_codepoint"], (
+              "independent raw JSON Unicode-category control counts differ"
+          )
+          assert affected == observed["affected_rows"], "affected-row disagreement"
+          assert crlf == observed["crlf_pairs"], "CRLF disagreement"
+          print("Independent raw-source JSON/Cc scan agrees with typed source census")
+
       - name: Retain provenance-only evidence
         uses: actions/upload-artifact@v4
         with:
