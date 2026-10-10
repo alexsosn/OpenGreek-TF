@@ -116,9 +116,9 @@ jobs:
                           row = json.loads(line)
                           found = False
                           for value in strings(row):
-                              crlf += value.count("\\r\\n")
+                              crlf += value.count("\r\n")
                               for char in value:
-                                  if unicodedata.category(char) == "Cc" and char not in "\\t\\n":
+                                  if unicodedata.category(char) == "Cc" and char not in "\t\n":
                                       counts[f"U+{ord(char):04X}"] += 1
                                       found = True
                           affected += int(found)
