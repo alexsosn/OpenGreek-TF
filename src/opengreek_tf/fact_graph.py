@@ -303,7 +303,7 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
     if not api:
         raise FactGraphError("cannot load native TF source fact graph")
 
-    def value(name: str, node: int) -> str | int | None:
+    def read_feature(name: str, node: int) -> str | int | None:
         """Absent optional features differ from present empty/zero values."""
         if name not in present:
             return None
@@ -320,7 +320,7 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
         s for s in api.F.otype.s("atom")
         if api.F.atom_kind.v(s) == "source-row"
     )
-    if len(row_atoms) != 1 or value("form", row_atoms[0]) is not None:
+    if len(row_atoms) != 1 or read_feature("form", row_atoms[0]) is not None:
         raise FactGraphError("fact graph requires one non-text source-row atom")
     source_atom = row_atoms[0]
     if source_atom not in api.E.oslots.s(passage):
@@ -330,7 +330,7 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
             raise FactGraphError("native source fact is not anchored to source row")
     by_handle: dict[int, int] = {}
     for handle in nodes:
-        ident = value("fact_id", handle)
+        ident = read_feature("fact_id", handle)
         if type(ident) is not int or ident in by_handle.values():
             raise FactGraphError("native fact id missing or duplicated")
         by_handle[handle] = ident
@@ -347,13 +347,13 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
 
     result: list[FactNode] = []
     for handle, ident in by_handle.items():
-        kind_raw = value("fact_kind", handle)
+        kind_raw = read_feature("fact_kind", handle)
         if kind_raw not in ("object", "array", "str", "int", "bool"):
             raise FactGraphError("unknown native fact kind")
         kind = cast(FactKind, kind_raw)
-        present = [("str", value("fact_str", handle)),
-                   ("int", value("fact_int", handle)),
-                   ("bool", value("fact_bool", handle))]
+        present = [("str", read_feature("fact_str", handle)),
+                   ("int", read_feature("fact_int", handle)),
+                   ("bool", read_feature("fact_bool", handle))]
         nonempty = [(name, val) for name, val in present if val is not None]
         if kind in ("object", "array"):
             if nonempty:
@@ -375,9 +375,9 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
                 if type(scalar) is not str:
                     raise FactGraphError("native string was converted")
                 value = scalar
-        pos = value("fact_position", handle)
-        key = value("fact_key", handle)
-        index = value("fact_index", handle)
+        pos = read_feature("fact_position", handle)
+        key = read_feature("fact_key", handle)
+        index = read_feature("fact_index", handle)
         if type(pos) is not int:
             raise FactGraphError("invalid native fact position")
         if key is not None and type(key) is not str:
@@ -392,9 +392,9 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
                 kind=kind, value=value,
             )
         )
-    family = value("source_family", passage)
-    relative_file = value("source_file", passage)
-    ordinal = value("source_ordinal", passage)
+    family = read_feature("source_family", passage)
+    relative_file = read_feature("source_file", passage)
+    ordinal = read_feature("source_ordinal", passage)
     if family not in ("primary", "secondary", "paratext"):
         raise FactGraphError("invalid native source family")
     if type(relative_file) is not str or type(ordinal) is not int:
