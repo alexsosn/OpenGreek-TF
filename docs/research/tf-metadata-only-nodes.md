@@ -16,9 +16,11 @@ The upstream `tf.convert.walker.CV.walk` implementation executes
 no `oslots` entry, also removing their feature values and edge endpoints.
 
 The upstream `tf.dataset.modify.modify` accepts `addTypes` with explicit
-`nodeSlots`. Its implementation writes these slot mappings as sets into
-`oslots` without demanding positive cardinality in the `addT` step.
-But this is *not proof* that the resulting dataset loads and is queryable.
+`nodeSlots`. However its **input validation explicitly rejects** every
+added node with an empty slot set (reporting `nodes not linked to slots`).
+Therefore `modify(addTypes=...)` cannot be used for genuine metadata-only
+entities even though its later `addT` loop could serialize empty sets.
+Do not bypass or monkeypatch that validation.
 
 The generic low-level `Fabric.save` can serialize user-supplied `otype`
 and `oslots`, bypassing CV. That too requires a real load/query test before
@@ -26,10 +28,15 @@ adoption.
 
 ## Experiment gate — native nodes without invented slots
 
-Build a tiny word-slot TF dataset with CV. Demonstrate that CV removes a
-metadata-only author. Then use the supported `tf.dataset.modify` interface
-to add two metadata-only `author` nodes (served identity and retired identity)
-with `nodeSlots={id: set()}` and ordinary typed node features.
+Build a tiny word-slot TF dataset with CV and demonstrate that CV removes a
+metadata-only author. Since `modify` also rejects unlinked nodes, test a
+**direct `Fabric.save` native graph** with two metadata-only `author`
+nodes (served identity and retired identity), explicit `oslots` mappings
+to empty sets, and ordinary typed node features.
+
+`Fabric.save` checks every non-slot node has an `oslots` **mapping**, but
+does not explicitly require that the mapping's set be nonempty. This candidate
+still requires an actual save/load/query proof, not just source inspection.
 
 Load the resulting dataset through `Fabric.load` and assert:
 
@@ -43,8 +50,9 @@ Load the resulting dataset through `Fabric.load` and assert:
 7. no phantom word slots, fake authorship, empty-content passage, semantic
    JSON sidecar or serialized pseudo-list is created.
 
-If `modify` or TF precomputation fails, test direct native serialization
-through `Fabric.save` as a fallback and assess its loading/query semantics.
+If direct `Fabric.save` or TF precomputation fails, record the precise
+failure and investigate Text-Fabric's low-level format/graph limitations.
+Do not invent slot attachments as a fallback.
 Do **not** hide the failure by assigning metadata-only entities to arbitrary
 existing words.
 
