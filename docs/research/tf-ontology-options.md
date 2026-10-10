@@ -41,9 +41,11 @@ run by deterministic segmentation, plus higher-order word objects when
 linguistically justified. This may improve text conservatism at the cost of
 unfamiliar TF query conventions.
 
-Candidate C: character/grapheme slots. This guarantees exact strings/offset
-anchors but would multiply nodes dramatically across ~65M Greek runs and may
-make ordinary word queries cumbersome.
+Candidate C: character/grapheme slots. This offers fine-grained source
+codepoint/offset anchors *if* native TF feature serialization and rendering
+are independently proven reversible (raw CR is a known counterexample).
+It also multiplies nodes substantially across ~65M Greek runs and may make
+ordinary word queries cumbersome.
 
 **Required RED-first acceptance tests** (must be written before a tokenizer
 implementation):
