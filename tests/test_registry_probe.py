@@ -15,6 +15,11 @@ from opengreek_tf.registry_probe import (
     read_registry_probe,
     write_registry_probe,
 )
+from opengreek_tf.registry_snapshot import (
+    LedgerSnapshotStats,
+    validate_full_registry_snapshot,
+    write_full_registry_snapshot,
+)
 
 
 @pytest.fixture
@@ -211,3 +216,81 @@ def test_repeated_identical_former_slug_values_preserve_multiplicity(
     )
     assert api
     assert len(api.F.otype.s("formerSlug")) == 2
+
+
+def test_full_ledger_snapshot_keeps_every_identity_as_one_real_nontext_atom(
+    ledger_root: Path, tmp_path: Path,
+) -> None:
+    """All four fixture source IDs, never an arbitrary selected subset."""
+    out = tmp_path / "complete"
+    report = write_full_registry_snapshot(ledger_root, out)
+    assert report == LedgerSnapshotStats(
+        authors=2, works=2, retired_authors=1, retired_works=1,
+        former_slug_facts=2, source_atoms=4,
+    )
+    assert validate_full_registry_snapshot(ledger_root, out) == report
+    rows = read_registry_probe(out)
+    assert [row.identifier for row in rows] == [
+        "oga000001", "oga000330", "ogc000772", "ogc000839",
+    ]
+    assert not (out / "form.tf").exists()
+    assert all(p.suffix == ".tf" for p in out.iterdir() if p.is_file())
+
+
+def test_snapshot_validation_rejects_subset_that_drops_an_entire_ledger_identity(
+    ledger_root: Path, tmp_path: Path,
+) -> None:
+    """Checks real source vs independently loaded TF, not writer selection."""
+    out = tmp_path / "incomplete"
+    write_registry_probe(
+        ledger_root, out, authors=("oga000001",),
+        works=("ogc000772", "ogc000839"),
+    )
+    with pytest.raises(RegistryProbeError):
+        validate_full_registry_snapshot(ledger_root, out)
+
+
+@pytest.mark.parametrize("mutation", ("removed-work", "renamed-author", "alias-reordered"))
+def test_snapshot_validation_rejects_changed_raw_source_after_build(
+    ledger_root: Path, tmp_path: Path, mutation: str,
+) -> None:
+    out = tmp_path / "snapshot"
+    write_full_registry_snapshot(ledger_root, out)
+    if mutation == "renamed-author":
+        file = ledger_root / "data" / "author_ids.json"
+        payload = json.loads(file.read_text())
+        payload["authors"]["oga000001"]["slug"] = "new-unverifiable-slug"
+    else:
+        file = ledger_root / "data" / "work_ids.json"
+        payload = json.loads(file.read_text())
+        if mutation == "removed-work":
+            del payload["works"]["ogc000839"]
+            payload["_meta"]["counts"]["retired"] -= 1
+        else:
+            old = payload["works"]["ogc000772"]["former_slugs"]
+            payload["works"]["ogc000772"]["former_slugs"] = list(reversed(old))
+    file.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(RegistryProbeError):
+        validate_full_registry_snapshot(ledger_root, out)
+
+
+def test_snapshot_validation_rejects_mutated_native_tf_feature(
+    ledger_root: Path, tmp_path: Path,
+) -> None:
+    out = tmp_path / "bad-tf"
+    write_full_registry_snapshot(ledger_root, out)
+    feature = out / "registry_slug.tf"
+    serialized = feature.read_text(encoding="utf-8")
+    assert "abas" in serialized
+    feature.write_text(serialized.replace("abas", "counterfeit", 1), encoding="utf-8")
+    with pytest.raises(RegistryProbeError):
+        validate_full_registry_snapshot(ledger_root, out)
+
+
+def test_snapshot_write_rejects_preexisting_output_even_when_empty(
+    ledger_root: Path, tmp_path: Path,
+) -> None:
+    occupied = tmp_path / "already-present"
+    occupied.mkdir()
+    with pytest.raises(RegistryProbeError):
+        write_full_registry_snapshot(ledger_root, occupied)
