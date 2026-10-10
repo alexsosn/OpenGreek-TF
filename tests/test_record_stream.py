@@ -287,3 +287,14 @@ def test_partial_or_mixed_merged_read_variants_rejected(
     rel = _source(tmp_path, "primary", "w", [body])
     with pytest.raises(RecordParseError, match="merged_read"):
         list(parse_file(tmp_path, rel))
+
+
+def test_empty_source_file_is_not_silently_skipped(tmp_path: Path) -> None:
+    rel = "data/corpus/empty.jsonl"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"")
+    with pytest.raises(RecordParseError) as exc:
+        list(parse_file(tmp_path, rel))
+    assert rel in str(exc.value)
+    assert "empty source file" in str(exc.value)
