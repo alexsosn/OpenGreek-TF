@@ -97,7 +97,9 @@ def test_native_tf_preserves_repeated_loci_empty_text_and_exact_slots(
 def test_writer_rejects_unimplemented_semantics_before_output(
     tmp_path: Path, extra: dict[str, object]
 ) -> None:
-    source_rows = _source(tmp_path, [_row("λόγος", **extra)])
+    row = _row("λόγος")
+    row.update(extra)
+    source_rows = _source(tmp_path, [row])
     dest = tmp_path / "tf"
     with pytest.raises(UnsupportedSourceStructure):
         write_primary_probe(source_rows, dest)
