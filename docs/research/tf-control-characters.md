@@ -67,6 +67,28 @@ scanner is not permission to accept CR in a later release.
 5. Do **not** close #29 solely from this PR. A nonzero pinned CR census
    prevents claiming lossless native TF until there is a tested representation.
 
+## Pinned-source evidence (initial C0 + DEL implementation)
+
+[Successful run 38060040207](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38060040207)
+verified the immutable release and all 3,909 + 533 + 5 files /
+1,970,947 + 307,085 + 15,958 records. For controls in U+0000–U+001F
+(except TAB/LF) and U+007F, it found:
+
+- **U+000D (CR): 0**; CRLF pairs: 0.
+- **U+007F (DEL): 2 source-field occurrences in one physical row**.
+  `data/corpus/aelius-herodianus-et-pseudo-herodianus.peri-paqw-n.jsonl`,
+  row 1043, `text` offset 570 and `text_lines[2]` offset 57 (all offsets
+  zero-based Unicode codepoints). These are two source representations of a
+  single passage, not evidence of two independent primary text passages.
+- All other C0 controls except TAB/LF: 0. One affected source row.
+
+That early successful run predates expansion of the scanner to the complete
+C1 range U+0080–U+009F. The exact-head C1-inclusive run is a distinct
+acceptance gate; the counts above must not be extrapolated to C1.
+
+The observed DEL has its own RED-first TF `form` / `T.text` round-trip
+test. A pass for DEL would not establish CR or browser compatibility.
+
 ## Open decisions
 
 If the pinned corpus contains CR, compare a first-class native integer
