@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "src/opengreek_tf/control_census.py"
+      - "src/opengreek_tf/fact_graph.py"
+      - "tests/test_fact_graph.py"
       - "tests/test_control_census.py"
       - "docs/research/tf-control-characters.md"
       - ".github/workflows/control-census-pinned.yml"
@@ -183,6 +185,43 @@ jobs:
           assert reconstructed == row.text
           assert api.T.text(passage, fmt="text-orig-full") == row.text
           print("Pinned DEL row 1043 conserves native TF form and T.text")
+
+      - name: Independently reconstruct pinned Herodian nested facts through native TF
+        shell: python
+        run: |
+          from itertools import islice
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.fact_graph import (
+              build_fact_graph, decode_fact_graph, read_native_fact_graph,
+              write_native_fact_probe,
+          )
+          from opengreek_tf.record_stream import FieldArray, parse_file
+
+          source = "data/corpus/aelius-herodianus-et-pseudo-herodianus.peri-paqw-n.jsonl"
+          row = next(islice(parse_file(Path("upstream"), source), 1042, None))
+          assert row.ordinal == 1043
+          assert isinstance(row.fields.get("text_lines"), FieldArray)
+          assert "\\x7f" in row.text
+          expected = build_fact_graph(row)
+          assert decode_fact_graph(expected) == row.fields
+
+          output = Path("pinned-fact-graph")
+          write_native_fact_probe(row, output)
+          decoded = read_native_fact_graph(output)
+          assert decoded.family == row.family
+          assert decoded.occurrence_key == row.occurrence_key
+          assert decoded.nodes == expected.nodes
+          assert decode_fact_graph(decoded) == row.fields
+
+          api = Fabric(locations=str(output), silent="deep").load(
+              "form fact_kind has_fact", silent="deep"
+          )
+          assert api
+          passage = api.F.otype.s("passage")[0]
+          assert api.T.text(passage, fmt="text-orig-full") == row.text
+          assert len(api.F.otype.s("sourceFact")) == len(expected.nodes)
+          print("Pinned source row 1043 fully roundtrips nested native source facts")
 
       - name: Retain provenance-only evidence
         uses: actions/upload-artifact@v4
