@@ -56,6 +56,11 @@ def write_primary_probe(
 
         values: dict[str, str | int] = {}
         for field_name, value in record.fields.items:
+            if isinstance(value, str) and "\r" in value:
+                raise UnsupportedSourceStructure(
+                    f"{record.occurrence_key}: {field_name}: carriage return cannot "
+                    "round-trip through TF 13.1 native string features"
+                )
             if field_name == "text":
                 continue
             if field_name in _UNMODELED_STRING_FIELDS:
@@ -82,6 +87,11 @@ def write_primary_probe(
         elif work_urn != urn:
             raise UnsupportedSourceStructure(
                 f"{record.occurrence_key}: mixed work URN {urn!r}"
+            )
+        if "\r" in record.text:
+            raise UnsupportedSourceStructure(
+                f"{record.occurrence_key}: text: carriage return cannot round-trip "
+                "through TF 13.1 native string features"
             )
         accepted.append((record, values))
 
