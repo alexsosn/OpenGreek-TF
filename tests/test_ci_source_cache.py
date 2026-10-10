@@ -18,7 +18,7 @@ from opengreek_tf.ci_source_cache import (
     prepare_source,
     verify_checkout,
 )
-from opengreek_tf.release import SUPPORTED_RELEASE, ReleaseIdentity
+from opengreek_tf.release import ReleaseIdentity
 
 
 def _git(*args: str) -> str:
