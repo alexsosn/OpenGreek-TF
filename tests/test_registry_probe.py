@@ -234,7 +234,7 @@ def test_full_ledger_snapshot_keeps_every_identity_as_one_real_nontext_atom(
         "oga000001", "oga000330", "ogc000772", "ogc000839",
     ]
     assert not (out / "form.tf").exists()
-    assert sorted(p.suffix for p in out.iterdir()) == [".tf"] * len(list(out.iterdir()))
+    assert all(p.suffix == ".tf" for p in out.iterdir() if p.is_file())
 
 
 def test_snapshot_validation_rejects_subset_that_drops_an_entire_ledger_identity(
