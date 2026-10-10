@@ -259,9 +259,14 @@ def test_release_succeeds_even_when_own_pr_remains_open(
         ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
             pr = {"number": 38, "state": "open", "title": "Implement (#37)",
                   "head": {"ref": "dev/37-owned"}, "user": {"login": "alice"}}
-            return ("open", [pr], [] if self.released else [
-                _comment(55, "lease-owner", user="alice", minutes_ago=1)
-            ])
+            created = datetime.now(UTC) - timedelta(minutes=1)
+            comment = {
+                "id": 55, "created_at": created.isoformat(),
+                "user": {"login": "alice"},
+                "body": claim_body(37, "lease-owner",
+                                   created + timedelta(minutes=30)),
+            }
+            return "open", [pr], [] if self.released else [comment]
 
         def get(self, path: str) -> dict[str, str]:
             assert path == "/user"
