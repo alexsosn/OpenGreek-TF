@@ -1,0 +1,67 @@
+name: Pinned Unicode text-run smoke
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/text_runs.py"
+      - "tests/test_text_runs.py"
+      - "docs/research/lossless-text-runs.md"
+      - ".github/workflows/text-runs-pinned.yml"
+  workflow_dispatch:
+
+jobs:
+  pinned-source-runs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Checkout immutable source sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/heraclides-ponticus.fragmenta.jsonl
+          /data/corpus_secondary/heraclides-ponticus.fragmenta-fhg2.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Validate real source text/codepoint offset conservation
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.text_runs import segment_runs
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          files = {
+              "data/corpus/heraclides-ponticus.fragmenta.jsonl": 101,
+              "data/corpus_secondary/heraclides-ponticus.fragmenta-fhg2.jsonl": 56,
+          }
+          for rel, count in files.items():
+              rows = 0
+              for line in (root / rel).read_text(encoding="utf-8").splitlines():
+                  row = json.loads(line)
+                  rows += 1
+                  for field in ("text", "text_orig"):
+                      if field not in row:
+                          continue
+                      original = row[field]
+                      result = list(segment_runs(original))
+                      assert "".join(r.value for r in result) == original
+                      assert all(original[r.start:r.end] == r.value for r in result)
+              assert rows == count, (rel, rows)
+              print(f"{rel}: {rows} real source rows, exact segmentation")
