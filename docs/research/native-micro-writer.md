@@ -51,3 +51,15 @@ The entire Open Greek semantic surface is not yet expressible by this narrow
 writer. It intentionally raises `UnsupportedSourceStructure` rather than
 pretending to materialize rows with `corrections`, `merged_read`, `provenance`,
 `text_lines` or `text_orig`, and it does not invent author identities.
+
+## Source-exact CR limitation discovered by adversarial review
+
+TF 13.1's `tfFromValue` escapes TAB, LF and backslash, but **not CR**;
+`tf.core.files.fileOpen` uses universal-newline text reading. Therefore a
+literal carriage return in `form` or any string source feature cannot be
+assumed to survive `Fabric.load` unchanged. This native mini-writer explicitly
+rejects `\\r` (including CRLF) before creating output, while accepting LF
+and TAB exactly. An independent research ticket, #29, must prove a first-class
+native representation or an upstream TF-compatible fix before complete-source
+conservation can be claimed. The source-stream reader and layout-run primitive
+remain exact: this is a **native TF serialization boundary** only.
