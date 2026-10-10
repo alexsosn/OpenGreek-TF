@@ -16,7 +16,7 @@ from opengreek_tf.fact_graph import (
     read_native_fact_graph,
     write_native_fact_probe,
 )
-from opengreek_tf.record_stream import FieldArray, FieldObject, ParsedRecord, parse_file
+from opengreek_tf.record_stream import ParsedRecord, parse_file
 
 
 def _record(tmp_path: Path, family: str, values: dict[str, object]) -> ParsedRecord:
