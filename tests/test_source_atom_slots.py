@@ -43,7 +43,12 @@ def test_source_atom_slots_preserve_unserved_entities_without_fake_words(
     assert cv.walk(
         director,
         slotType="atom",
-        otext={"fmt:text-orig-full": "{form}"},
+        generic={"source": "synthetic source-atom TF research fixture"},
+        otext={
+            "sectionTypes": "passage",
+            "sectionFeatures": "locus",
+            "fmt:text-orig-full": "{form}",
+        },
         featureMeta={
             "atom_kind": {"description": "Source atom kind"},
             "form": {"description": "Exact text atom"},
