@@ -102,7 +102,7 @@ The #20/PR #22 TF 13.1 proof has since shown that CV drops genuinely
 unlinked author nodes, and that direct Fabric.save with empty oslots does not
 load as a valid dataset. A distinct source-record `atom` slot can anchor
 an actual unserved/retired identity without creating a Greek text word,
-and the loaded dataset preserves such author nodes. This is a tested
+and the loaded **synthetic fixture** preserves such author nodes. This is a tested
 **candidate**, not approval to use text slots as a proxy for metadata,
 nor a final production ontology; see `docs/research/tf-metadata-only-nodes.md`.
 
@@ -172,8 +172,8 @@ metadata. Intentional corruption fixtures must prove failure.
   remains unsafe in TF 13.1's tested native string path, so the writer rejects
   it before output. This does **not** establish advanced-browser rendering
   or the future-release contract.
-- #20/PR #22's source-record atom candidate preserves registry-only identities
-  in a loaded dataset. Whether this is sustainable at full-corpus scale,
+- #20/PR #22's source-record atom candidate preserves *synthetic examples*
+  of registry-only identities in a loaded dataset. Whether this is sustainable at full-corpus scale,
   whether word queries remain ergonomic, and advanced app behavior remain open.
 
 The source-level proofs above narrow the design search; they do not prove
