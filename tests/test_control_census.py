@@ -158,3 +158,22 @@ def test_streaming_sink_receives_every_location_despite_sample_cap(
     assert {(location.field_path, location.offset) for location in received} >= {
         ("text_lines[1]", 1), ("provenance.note", 1),
     }
+
+
+def test_c1_range_including_next_line_is_not_silently_ignored(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    _source(tmp_path, "paratext", "c1", [{
+        "slug": "work", "edition": "other", "page": "xii", "source": "ocr",
+        "license": "CC-BY", "lang": "la", "text": "α\u0085\u009fβ",
+    }])
+    result = count_controls(iter_family(tmp_path, "paratext"))
+    assert result.occurrences_by_codepoint == {
+        "U+001B": 1, "U+0085": 1, "U+009F": 1,
+    }
+    assert result.affected_rows == 2
+    assert {
+        (s.relative_file, s.offset, s.codepoint) for s in result.samples
+    } >= {
+        ("data/paratext/c1.jsonl", 1, "U+0085"),
+        ("data/paratext/c1.jsonl", 2, "U+009F"),
+    }
