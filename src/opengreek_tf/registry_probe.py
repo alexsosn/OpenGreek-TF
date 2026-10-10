@@ -113,7 +113,10 @@ def _selected_records(
     source_root: Path, authors: tuple[str, ...], works: tuple[str, ...]
 ) -> tuple[LedgerRecord, ...]:
     selected: list[LedgerRecord] = []
-    for kind, ids in (("author", authors), ("work", works)):
+    selections: tuple[tuple[RegistryKind, tuple[str, ...]], ...] = (
+        ("author", authors), ("work", works),
+    )
+    for kind, ids in selections:
         if len(ids) != len(set(ids)):
             raise RegistryProbeError(f"duplicate selection for {kind} ledger")
         all_rows = parse_ledger(source_root, kind)
@@ -190,7 +193,9 @@ def write_registry_probe(
         director,
         slotType="atom",
         generic={"source": "Pinned Open Greek identity-ledger research probe"},
-        otext={},
+        # CV 13.1 requires at least one named text format. This renders
+        # *actual opaque source IDs*, never fabricated Greek textual content.
+        otext={"fmt:metadata-id": "{source_record_id}"},
         intFeatures=integer_features,
         featureMeta=features,
         warn=False,
