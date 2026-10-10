@@ -132,9 +132,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="optional streamed JSONL of every control location",
     )
     args = parser.parse_args(argv)
+    if args.locations_output is not None:
+        target = args.locations_output
+        if target.is_symlink() or target.exists():
+            parser.error("locations-output must not overwrite an existing path")
+        if target.resolve().is_relative_to(args.source.resolve()):
+            parser.error("locations-output must be outside the source checkout")
     rows = chain.from_iterable(iter_family(args.source, family) for family in FAMILIES)
     if args.locations_output is not None:
-        with args.locations_output.open("w", encoding="utf-8") as output:
+        with args.locations_output.open("x", encoding="utf-8") as output:
             def record_location(location: ControlLocation) -> None:
                 output.write(json.dumps(asdict(location), sort_keys=True) + "\n")
 
