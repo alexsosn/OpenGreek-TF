@@ -1,0 +1,96 @@
+name: Pinned source carriage-return census
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/source_controls.py"
+      - "tests/test_source_controls.py"
+      - "docs/research/tf-cr-controls.md"
+      - ".github/workflows/source-cr-census.yml"
+  workflow_dispatch:
+
+jobs:
+  source-cr-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Checkout pinned source text families
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/
+          /data/corpus_secondary/
+          /data/paratext/
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Scan every source field without modifying any source fact
+        shell: python
+        run: |
+          import os
+          from collections import Counter
+          from pathlib import Path
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.record_stream import iter_family
+          from opengreek_tf.source_controls import iter_carriage_returns
+
+          root = Path("upstream")
+          verified = verify_source(root)
+          assert verified.revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          families = {
+              "primary": ("corpus", 3909, 1_970_947),
+              "secondary": ("corpus_secondary", 533, 307_085),
+              "paratext": ("paratext", 5, 15_958),
+          }
+          lines = ["# Pinned Open Greek U+000D census", ""]
+          grand_total = 0
+          for family, (subdir, file_expected, row_expected) in families.items():
+              files = list((root / "data" / subdir).glob("*.jsonl"))
+              assert len(files) == file_expected, (family, len(files))
+              rows = 0
+              hits = 0
+              chars = 0
+              by_field = Counter()
+              examples = []
+              for row in iter_family(root, family):
+                  rows += 1
+                  for finding in iter_carriage_returns(row):
+                      hits += 1
+                      chars += finding.count
+                      by_field[finding.field_path] += finding.count
+                      if len(examples) < 15:
+                          examples.append(
+                              f"{finding.relative_file}:{finding.ordinal}:"
+                              f"{finding.field_path} ({finding.count} CR)"
+                          )
+              assert rows == row_expected, (family, rows, row_expected)
+              grand_total += chars
+              line = f"{family}: files={len(files)} rows={rows} " + (
+                  f"CR-bearing field values={hits} CR codepoints={chars}"
+              )
+              print(line)
+              lines.extend([f"## {family}", "", line, ""])
+              for field, n in by_field.most_common():
+                  print(f"  {field}: {n} CR")
+                  lines.append(f"- `{field}`: {n} CR codepoints")
+              for sample in examples:
+                  print(f"  example: {sample}")
+                  lines.append(f"- Sample: `{sample}`")
+              lines.append("")
+          print(f"Total U+000D codepoints across all source strings: {grand_total}")
+          lines.append(f"**Total U+000D: {grand_total}**")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+              "\n".join(lines) + "\n", encoding="utf-8"
+          )
