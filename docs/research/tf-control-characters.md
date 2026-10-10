@@ -29,7 +29,8 @@ text rows must be examined, not just the primary `text` field:
 
 `control_census.py` uses the audited, strictly typed `record_stream`
 parser and recursively inspects every nested source string, including arrays
-and ordered objects. It counts each Unicode Cc control (C0, DEL and C1, excluding TAB and LF), distinguishes CRLF pairs, and reports affected physical rows.
+and ordered objects. It counts every Unicode Cc control (C0, DEL and C1, excluding TAB and LF),
+distinguishes CRLF pairs, and reports affected physical rows.
 It uses 0-based Python Unicode-codepoint offsets within the leaf field value
 and preserves the exact `relative_file:ordinal:field_path` source location.
 Field names are schema-audited and not treated as source text.
@@ -39,7 +40,8 @@ The CLI has bounded aggregate memory: it retains counts and no more than
 `--locations-output controls.jsonl` is supplied it streams **all** locations
 to a separate diagnostics-only JSONL, without keeping them in memory.
 The diagnostic output path must be outside the source checkout and must not
-already exist; the CLI uses exclusive creation to avoid overwriting corpus or\nprior evidence. No source text or generated corpus is committed.
+already exist; the CLI uses exclusive creation to avoid overwriting corpus or
+prior evidence. No source text or generated corpus is committed.
 
 Example (after verifying the local checkout):
 
@@ -51,7 +53,9 @@ python -m opengreek_tf.control_census upstream/open-greek-corpus \
 The `Pinned source control-codepoint census` workflow performs the scan
 against exactly the supported release and fails if the three-family row/file
 counts differ. An independent raw-JSONL pass walks decoded objects
-without using the typed parser and checks Unicode category `Cc`, affected\nrow counts and CRLF counts against the scanner's report. It uploads the\ndiagnostics and prints the counts to its job summary. The result is evidence about **this pinned release only**; the
+without using the typed parser and checks Unicode category `Cc`, affected
+row counts and CRLF counts against the scanner's report. It uploads the
+diagnostics and prints the counts to its job summary. The result is evidence about **this pinned release only**; the
 scanner is not permission to accept CR in a later release.
 
 ## TDD gates
