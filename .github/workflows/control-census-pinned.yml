@@ -130,6 +130,52 @@ jobs:
           assert crlf == observed["crlf_pairs"], "CRLF disagreement"
           print("Independent raw-source JSON/Cc scan agrees with typed source census")
 
+      - name: Prove real pinned DEL passage survives native TF load
+        shell: python
+        run: |
+          from itertools import islice
+          from pathlib import Path
+          from tf.convert.walker import CV
+          from tf.fabric import Fabric
+          from opengreek_tf.record_stream import parse_file
+          from opengreek_tf.text_runs import segment_runs
+
+          source_path = (
+              "data/corpus/"
+              "aelius-herodianus-et-pseudo-herodianus.peri-paqw-n.jsonl"
+          )
+          row = next(islice(parse_file(Path("upstream"), source_path), 1042, None))
+          assert row.ordinal == 1043
+          assert row.text.count("\x7f") == 1
+
+          def director(cv):
+              passage = cv.node("passage")
+              for run in segment_runs(row.text):
+                  slot = cv.slot()
+                  cv.feature(slot, form=run.value)
+              cv.terminate(passage)
+
+          fabric = Fabric(locations="control-real-del-tf", silent="deep")
+          assert CV(fabric, silent="deep").walk(
+              director,
+              slotType="atom",
+              generic={"source": "Pinned Open Greek DEL source probe"},
+              otext={"fmt:text-orig-full": "{form}"},
+              featureMeta={"form": {"description": "exact source layout run"}},
+              warn=False,
+          )
+          api = Fabric(locations="control-real-del-tf", silent="deep").load(
+              "form", silent="deep"
+          )
+          assert api
+          passage = api.F.otype.s("passage")[0]
+          reconstructed = "".join(
+              api.F.form.v(slot) for slot in api.E.oslots.s(passage)
+          )
+          assert reconstructed == row.text
+          assert api.T.text(passage, fmt="text-orig-full") == row.text
+          print("Pinned DEL row 1043 conserves native TF form and T.text")
+
       - name: Retain provenance-only evidence
         uses: actions/upload-artifact@v4
         with:
