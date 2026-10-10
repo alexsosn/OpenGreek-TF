@@ -238,3 +238,16 @@ def test_loaded_native_probe_supports_empty_source_text(tmp_path: Path) -> None:
     dest = tmp_path / "native"
     write_fact_probe(_row(fields), dest)
     assert restore_fact_fields(read_fact_probe(dest)) == fields
+
+
+def test_loaded_native_probe_rejects_unrecognized_text_atom_kind(
+    tmp_path: Path, representative: FieldObject
+) -> None:
+    dest = tmp_path / "native"
+    write_fact_probe(_row(representative), dest)
+    atom_path = dest / "atom_kind.tf"
+    original = atom_path.read_text(encoding="utf-8")
+    assert "text" in original
+    atom_path.write_text(original.replace("text", "phantom", 1), encoding="utf-8")
+    with pytest.raises(FactGraphError, match="text atom"):
+        read_fact_probe(dest)
