@@ -189,12 +189,19 @@ def test_c1_range_including_next_line_is_not_silently_ignored(tmp_path: Path) ->
     }
 
 
-def test_text_fabric_roundtrips_del_found_in_pinned_source(tmp_path: Path) -> None:
-    """The pinned control census located DEL in a real primary text row."""
+@pytest.mark.parametrize(
+    "control",
+    ("\\x7f", "\\x81", "\\x86", "\\x88", "\\x8c", "\\x8d", "\\x8e",
+     "\\x8f", "\\x90", "\\x98", "\\x9a", "\\x9c", "\\x9d", "\\x9e"),
+)
+def test_text_fabric_roundtrips_all_observed_pinned_c1_and_del_controls(
+    tmp_path: Path, control: str,
+) -> None:
+    """Actual pinned corpus controls must survive TF native feature loading."""
     from tf.convert.walker import CV
     from tf.fabric import Fabric
 
-    original = "α\x7fβ"
+    original = f"α{control}β"
 
     def director(cv: CV) -> None:
         passage = cv.node("passage")
