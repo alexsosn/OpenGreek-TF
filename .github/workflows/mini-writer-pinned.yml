@@ -1,0 +1,71 @@
+name: Native TF micro-writer pinned source proof
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/mini_writer.py"
+      - "tests/test_mini_writer.py"
+      - "docs/research/native-micro-writer.md"
+      - ".github/workflows/mini-writer-pinned.yml"
+  workflow_dispatch:
+
+jobs:
+  mini-graph:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Acquire pinned actual three-passage Greek source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/heraclides-ponticus.fragmenta.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Materialize and load typed source in TF 13.1
+        shell: python
+        run: |
+          from itertools import islice
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.record_stream import parse_file
+          from opengreek_tf.mini_writer import write_primary_probe
+          from opengreek_tf.source import verify_source
+
+          root = Path("upstream")
+          verify_source(root)
+          path = "data/corpus/heraclides-ponticus.fragmenta.jsonl"
+          records = list(islice(parse_file(root, path), 3))
+          assert len(records) == 3
+          expected = [row.text for row in records]
+          write_primary_probe(records, Path("mini-tf"))
+          api = Fabric(locations="mini-tf", silent="deep").load(
+              "atom_kind form source_ordinal source_file passage_key work_slug "
+              "src_urn src_locus src_edition src_source src_license src_page "
+              "src_work", silent="deep",
+          )
+          assert api
+          passages = api.F.otype.s("passage")
+          assert len(passages) == 3
+          for node, original in zip(passages, expected, strict=True):
+              slots = api.E.oslots.s(node)
+              assert sum(api.F.atom_kind.v(s) == "source-row" for s in slots) == 1
+              assert "".join(
+                  api.F.form.v(s)
+                  for s in slots
+                  if api.F.atom_kind.v(s) == "text"
+              ) == original
+              assert api.T.text(node, fmt="text-orig-full") == original
+          print("Pinned real-source TF mini graph loads, conserves Unicode text")
