@@ -203,4 +203,4 @@ def test_syntactically_valid_corrupt_git_object_triggers_verified_clean_refetch(
     verify_checkout(root, identity=identity, expected_files=(1, 1, 1))
     assert (root / "data" / "corpus" / "one.jsonl").read_text(
         encoding="utf-8"
-    ) == '{"text":"ἀρχή"}\\n'
+    ) == '{"text":"ἀρχή"}\n'
