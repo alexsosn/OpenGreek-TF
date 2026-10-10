@@ -47,3 +47,19 @@ record is a legitimate source fact, not a manufactured lexical word.
   future source revisions introduce unsupported TF string controls.
 - The root/source occurrence identity must be recorded separately, not
   assumed recoverable from a possibly duplicated `locus` label.
+
+## Adversarial conservation seal
+
+The first RED test exposed an important weakness: a source-local graph made
+only of consecutively numbered nodes cannot detect a *trailing* child removed
+after parsing, and a valid permutation of source-object fields still looks
+like a well-formed object. The graph now carries both an exact node-count
+commitment and a SHA-256 digest of physical source identity plus every typed
+fact, key, parent ID, ordinal and literal scalar value. The digest is a
+**validator commitment, not a semantic data store**. All source facts remain
+first-class native nodes/features/edges and must be independently recoverable;
+the digest cannot substitute for them. Native TF stores the count and digest
+on the source passage and validates them again after `Fabric.load`.
+The eventual independent validator (#9) must also compare reconstructed facts
+against raw source, since no self-reported digest prevents malicious
+simultaneous modification of data and commitment.
