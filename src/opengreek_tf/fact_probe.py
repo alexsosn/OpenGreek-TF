@@ -136,7 +136,7 @@ def read_fact_probe(destination: str | Path) -> FactGraph:
         "atom_kind", "fact_id", "fact_kind", "fact_position", "has_fact",
     }
     optional = {"fact_key", "fact_text", "fact_int"}
-    declared = discovered["nodes"] | discovered["edges"]
+    declared = set(discovered["nodes"]) | set(discovered["edges"])
     if not required.issubset(declared):
         raise FactGraphError("missing mandatory native source-fact features")
     api = fabric.load(" ".join(sorted(required | (optional & declared))), silent="deep")
