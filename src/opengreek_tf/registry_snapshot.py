@@ -14,6 +14,7 @@ from typing import Any
 
 from .registry_probe import (
     LedgerRecord,
+    RegistryKind,
     RegistryProbeError,
     parse_ledger,
     read_registry_probe,
@@ -44,10 +45,11 @@ def _reject_duplicate_keys(items: list[tuple[str, Any]]) -> dict[str, Any]:
 def _independent_raw_records(source_root: Path) -> tuple[LedgerRecord, ...]:
     """Walk every source entry without using the registry-probe source parser."""
     records: list[LedgerRecord] = []
-    for kind, filename, collection, namespace in (
+    sources: tuple[tuple[RegistryKind, str, str, str], ...] = (
         ("author", "data/author_ids.json", "authors", "oga"),
         ("work", "data/work_ids.json", "works", "ogc"),
-    ):
+    )
+    for kind, filename, collection, namespace in sources:
         try:
             payload = json.loads(
                 (source_root / filename).read_text(encoding="utf-8"),
@@ -128,7 +130,7 @@ def validate_full_registry_snapshot(
         wrong = next(
             (
                 index
-                for index, (left, right) in enumerate(zip(expected, observed))
+                for index, (left, right) in enumerate(zip(expected, observed, strict=False))
                 if left != right
             ),
             min(len(expected), len(observed)),
