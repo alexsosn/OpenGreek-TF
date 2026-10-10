@@ -111,6 +111,8 @@ def test_native_tf_roundtrip_uses_one_genuine_nonlexical_atom_per_record(
     for node in (*api.F.otype.s("registryAuthor"), *api.F.otype.s("registryWork")):
         (source_slot,) = api.E.oslots.s(node)
         assert api.F.source_record_id.v(source_slot) == api.F.opaque_id.v(node)
+        # A metadata label is source-declared, not an invented Greek text form.
+        assert api.T.text(node, fmt="metadata-id") == api.F.opaque_id.v(node)
     work = next(n for n in api.F.otype.s("registryWork")
                 if api.F.opaque_id.v(n) == "ogc000772")
     aliases = api.E.has_former_slug.f(work)
