@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
 
+import opengreek_tf.dev_gate as gate_module
 from opengreek_tf.dev_claim import GithubAPI
 from opengreek_tf.dev_gate import (
     MergeGateError,
@@ -226,3 +228,80 @@ def test_ci_on_same_head_against_previous_base_is_not_current_green() -> None:
     run["pull_requests"][0]["base"]["sha"] = "f" * 40
     with pytest.raises(MergeGateError, match="base|CI"):
         _gate(runs=[run], required=("CI",))
+
+
+@pytest.mark.parametrize("race", ["none", "base-advanced", "new-pr"])
+def test_cli_rechecks_live_state_after_ci_review_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    race: str,
+) -> None:
+    """The CLI must not report success if main or issue ownership moves."""
+    class FakeAPI:
+        token = "fixture-token"
+
+        def __init__(self) -> None:
+            self.base_calls = 0
+            self.snapshot_calls = 0
+
+        def snapshot(
+            self, issue: int
+        ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
+            assert issue == ISSUE
+            self.snapshot_calls += 1
+            ours = {
+                "number": PR,
+                "state": "open",
+                "title": "Implement issue #37",
+                "head": {"ref": "dev/37-premerge"},
+                "user": {"login": "alice"},
+            }
+            other = {
+                "number": 43,
+                "state": "open",
+                "title": "Implement issue #37",
+                "head": {"ref": "dev/37-racing"},
+                "user": {"login": "bob"},
+            }
+            return "open", [ours, other] if (
+                race == "new-pr" and self.snapshot_calls == 2
+            ) else [ours], []
+
+        def get(self, path: str) -> Any:
+            if path == "/user":
+                return {"login": "alice"}
+            if path == f"/pulls/{PR}":
+                return _pr()
+            if path == "/branches/main":
+                self.base_calls += 1
+                return (
+                    {"name": "main", "commit": {"sha": "f" * 40}}
+                    if race == "base-advanced" and self.base_calls == 2
+                    else _main()
+                )
+            if path.startswith("/actions/runs?head_sha="):
+                return {"total_count": 1, "workflow_runs": [_run()]}
+            raise AssertionError(path)
+
+        def pages(self, path: str) -> list[dict[str, Any]]:
+            assert path == f"/pulls/{PR}/reviews"
+            return [_review()]
+
+    fake = FakeAPI()
+    monkeypatch.setenv("GITHUB_TOKEN", "fixture-token")
+    monkeypatch.setattr(
+        gate_module, "GithubAPI", lambda repo, token: fake,
+    )
+    code = gate_module.main([
+        "--issue", str(ISSUE), "--pr", str(PR),
+        "--require-workflow", "CI",
+    ])
+    output = capsys.readouterr()
+    if race == "none":
+        assert code == 0
+        assert json.loads(output.out)["head_sha"] == HEAD
+    else:
+        assert code == 2
+        assert output.out == ""
+        assert "merge blocked" in output.err
+    assert fake.snapshot_calls == 2
