@@ -289,12 +289,17 @@ def test_partial_or_mixed_merged_read_variants_rejected(
         list(parse_file(tmp_path, rel))
 
 
-def test_empty_source_file_is_not_silently_skipped(tmp_path: Path) -> None:
-    rel = "data/corpus/empty.jsonl"
+def test_empty_source_file_is_valid_and_accounted_for_separately(
+    tmp_path: Path,
+) -> None:
+    # The pinned upstream genuinely contains a zero-byte secondary witness
+    # container: data/corpus_secondary/democritus.fragmenta.jsonl.
+    rel = "data/corpus_secondary/democritus.fragmenta.jsonl"
     path = tmp_path / rel
     path.parent.mkdir(parents=True)
     path.write_bytes(b"")
-    with pytest.raises(RecordParseError) as exc:
-        list(parse_file(tmp_path, rel))
-    assert rel in str(exc.value)
-    assert "empty source file" in str(exc.value)
+    assert list(parse_file(tmp_path, rel)) == []
+    assert path.is_file()
+    assert list(iter_family(tmp_path, "secondary")) == []
+    # The whole-corpus census counts source files from the directory, not from
+    # record iterators, since empty source containers have zero rows.
