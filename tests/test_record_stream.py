@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -34,17 +35,43 @@ def test_primary_source_order_exact_text_and_nested_types(tmp_path: Path) -> Non
         "primary",
         "test-work",
         [
-            '{"urn":"test-work","edition":"grc","locus":"1.1",'
-            '"source":"tei","license":"PD","text":"  λόγος  \t\\n",'
-            '"corrections":["manual:alpha","manual:beta"],'
-            '"page":12,"dfhg_flag":false,'
-            '"text_lines":["  λόγος  ","\t"],'
-            '"bekker":["1a","1b"],'
-            '"provenance":{"method":"direct","consolidated_from":["x","y"],'
-            '"dropped_gap":0},'
-            '"merged_read":{"guessed":2,"substituted":1,"with":["reading-a"]}}',
-            '{"urn":"test-work","edition":"grc","locus":"1.1",'
-            '"source":"tei","license":"PD","text":"ἕτερον"}',
+            json.dumps(
+                {
+                    "urn": "test-work",
+                    "edition": "grc",
+                    "locus": "1.1",
+                    "source": "tei",
+                    "license": "PD",
+                    "text": "  λόγος  \t\n",
+                    "corrections": ["manual:alpha", "manual:beta"],
+                    "page": 12,
+                    "dfhg_flag": False,
+                    "text_lines": ["  λόγος  ", "\t"],
+                    "bekker": ["1a", "1b"],
+                    "provenance": {
+                        "method": "direct",
+                        "consolidated_from": ["x", "y"],
+                        "dropped_gap": 0,
+                    },
+                    "merged_read": {
+                        "guessed": 2,
+                        "substituted": 1,
+                        "with": ["reading-a"],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "urn": "test-work",
+                    "edition": "grc",
+                    "locus": "1.1",
+                    "source": "tei",
+                    "license": "PD",
+                    "text": "ἕτερον",
+                },
+                ensure_ascii=False,
+            ),
         ],
     )
     rows = list(parse_file(tmp_path, rel))
