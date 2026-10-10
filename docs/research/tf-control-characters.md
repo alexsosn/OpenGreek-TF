@@ -50,8 +50,8 @@ python -m opengreek_tf.control_census upstream/open-greek-corpus \
 
 The `Pinned source control-codepoint census` workflow performs the scan
 against exactly the supported release and fails if the three-family row/file
-counts differ. It uploads the diagnostics and prints the counts to its job
-summary. The result is evidence about **this pinned release only**; the
+counts differ. An independent raw-JSONL pass walks decoded objects
+without using the typed parser and checks Unicode category `Cc`, affected\nrow counts and CRLF counts against the scanner's report. It uploads the\ndiagnostics and prints the counts to its job summary. The result is evidence about **this pinned release only**; the
 scanner is not permission to accept CR in a later release.
 
 ## TDD gates
