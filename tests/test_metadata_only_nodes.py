@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from tf.convert.walker import CV  # type: ignore[import-untyped]
 from tf.fabric import Fabric  # type: ignore[import-untyped]
 
