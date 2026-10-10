@@ -120,7 +120,7 @@ def test_full_pages_and_page_overflow_fail_closed(monkeypatch: pytest.MonkeyPatc
 
     def fake_get(path: str) -> Any:
         seen.append(path)
-        if "page=1" in path:
+        if path.endswith("&page=1"):
             return [{"id": n} for n in range(100)]
         return [{"id": 999}]
 
@@ -150,3 +150,33 @@ def test_snapshot_fetches_issue_and_all_open_prs_and_comments(
     monkeypatch.setattr(api, "get", fake_get)
     state, prs, comments = api.snapshot(37)
     assert state == "open" and len(prs) == 1 and comments == []
+
+
+def test_own_open_pr_exemption_requires_matching_authenticated_actor() -> None:
+    linked = {"number": 38, "title": "Implement (#37)", "state": "open",
+              "body": "Implements #37", "head": {"ref": "dev/37-owner"},
+              "user": {"login": "alice"}}
+    assert assess(37, "open", [linked], [], NOW,
+                  actor="alice", own_pr_number=38).allowed
+    assert not assess(37, "open", [linked], [], NOW,
+                      actor="mallory", own_pr_number=38).allowed
+    assert not assess(37, "open", [linked], [], NOW).allowed
+
+
+def test_public_claim_token_cannot_impersonate_other_github_actor() -> None:
+    claim = _comment(50, "not-a-secret", user="alice")
+    assert assess(37, "open", [], [claim], NOW,
+                  token="not-a-secret", actor="alice").allowed
+    assert not assess(37, "open", [], [claim], NOW,
+                      token="not-a-secret", actor="mallory").allowed
+
+
+def test_another_active_pr_still_blocks_even_with_own_pr_exemption() -> None:
+    ours = {"number": 38, "title": "Implement (#37)", "state": "open",
+            "head": {"ref": "dev/37-ours"}, "user": {"login": "alice"}}
+    other = {"number": 39, "title": "Implement (#37)", "state": "open",
+             "head": {"ref": "dev/37-theirs"}, "user": {"login": "bob"}}
+    blocked = assess(37, "open", [ours, other], [], NOW,
+                     actor="alice", own_pr_number=38)
+    assert not blocked.allowed
+    assert blocked.active_pr_numbers == (39,)
