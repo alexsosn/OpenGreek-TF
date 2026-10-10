@@ -14,7 +14,6 @@ from tf.fabric import Fabric  # type: ignore[import-untyped]
 from .fact_graph import (
     FactGraph,
     FactGraphError,
-    FactKind,
     FactNode,
     build_fact_graph,
     restore_fact_fields,
