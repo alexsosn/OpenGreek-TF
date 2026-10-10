@@ -299,9 +299,7 @@ def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
 
     try:
         with file_path.open("rb") as source:
-            found_rows = 0
             for ordinal, raw_line in enumerate(source, start=1):
-                found_rows += 1
                 context = f"{relative_file}:{ordinal}"
                 try:
                     line = raw_line.decode("utf-8", errors="strict")
@@ -344,8 +342,6 @@ def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
                     ordinal=ordinal,
                     fields=checked_fields,
                 )
-            if found_rows == 0:
-                raise RecordParseError(f"{relative_file}: empty source file")
     except (OSError, UnicodeError) as exc:
         raise RecordParseError(f"cannot read {relative_file}: {exc}") from exc
 
