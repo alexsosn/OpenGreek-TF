@@ -65,3 +65,41 @@ how advanced app/browser features expose metadata-only nodes.
 
 The resulting method will be integrated only when schema requirements and
 full-corpus conservation gates are ready.
+
+
+## Research candidate: real source-atom slots
+
+Since an unlinked native node is rejected by all three paths, the test branch
+also probes a *different slot ontology*. With `slotType=atom`, some slots
+represent genuine text atoms, while other slots represent genuine metadata
+records from the Open Greek identity/registry ledgers. A non-slot `author`
+node can legitimately contain its own metadata-record slot; no word token,
+text extent or authorship of an unrelated work is fabricated.
+
+The test asserts that `F.otype.s("word")` still enumerates only the
+real text-bearing word object, and that metadata atoms have no `form`.
+It separately checks exact source IDs and retired/served status, slot
+disjointness, loaded query features and passage membership.
+
+This is **not yet the selected design**:
+
+- It departs from BHSA's `word` slot type for a concrete source-data reason.
+- Representing every text word both as an `atom` slot and a separate
+  `word` object may almost double node count at full-corpus scale.
+- An optimized alternative would query text atoms directly by a
+  `slotKind=text` feature, avoiding all individual wrapper `word`
+  nodes but changing familiar Text-Fabric word-query ergonomics.
+- Section navigation, cross-type edges, Text-Fabric query performance, and
+  the advanced app still require proof against the real corpus.
+- Any adoption requires a recorded #3 ontology ADR and #13 benchmark; this
+  research probe must not silently set the production slot model.
+
+## Source-level negative finding
+
+Text-Fabric 13.1's `Fabric.save` checks that every non-slot node has an
+`oslots` **key**, and can serialize an empty Python set, but its plain-text
+edge reader rejects an empty target specification (`emptyNode2Spec`) and
+reconstructs `oslots` using only successfully parsed edge rows.
+Consequently the separately tested empty-slot native graph is not a
+round-trippable, loaded TF corpus. A `.tf` file existing on disk is not
+sufficient evidence of successful modeling.
