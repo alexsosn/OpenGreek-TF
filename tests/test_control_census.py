@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from opengreek_tf.control_census import ControlLocation, count_controls, main
+from opengreek_tf.control_census import FAMILIES, ControlLocation, count_controls, main
 from opengreek_tf.record_stream import ParsedRecord, iter_family
 
 
@@ -54,7 +54,7 @@ def _fixture(root: Path) -> None:
 def _rows(root: Path) -> Iterator[ParsedRecord]:
     return chain.from_iterable(
         iter_family(root, family)
-        for family in ("primary", "secondary", "paratext")
+        for family in FAMILIES
     )
 
 
