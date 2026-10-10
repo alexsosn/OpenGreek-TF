@@ -193,6 +193,7 @@ def test_cli_rechecks_posted_claim_and_relinquishes_if_race_lost(
     class FakeAPI:
         def __init__(self, repo: str, token: str | None = None) -> None:
             assert repo == "alexsosn/OpenGreek-TF" and token == "fake-test-token"
+            self.token = token
             self.posted_body: str | None = None
             self.released: list[str] = []
 
@@ -252,6 +253,7 @@ def test_release_succeeds_even_when_own_pr_remains_open(
     """Relinquishing one's comment is independent of an own open PR."""
     class FakeAPI:
         def __init__(self, repo: str, token: str | None = None) -> None:
+            self.token = token
             self.released = False
 
         def snapshot(
