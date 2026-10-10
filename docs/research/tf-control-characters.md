@@ -38,7 +38,8 @@ The CLI has bounded aggregate memory: it retains counts and no more than
 `--sample-limit` diagnostic locations. When
 `--locations-output controls.jsonl` is supplied it streams **all** locations
 to a separate diagnostics-only JSONL, without keeping them in memory.
-No source text or generated corpus is committed.
+The diagnostic output path must be outside the source checkout and must not
+already exist; the CLI uses exclusive creation to avoid overwriting corpus or\nprior evidence. No source text or generated corpus is committed.
 
 Example (after verifying the local checkout):
 
