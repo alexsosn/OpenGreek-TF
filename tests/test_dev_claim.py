@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 
 from opengreek_tf.dev_claim import (
-    ClaimError, GithubAPI, assess, claim_body, pr_implements_issue,
+    ClaimError,
+    GithubAPI,
+    assess,
+    claim_body,
+    pr_implements_issue,
 )
 
-NOW = datetime(2026, 10, 10, 16, 50, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 10, 16, 50, tzinfo=UTC)
 
 
 def _comment(
