@@ -1,0 +1,75 @@
+name: Pinned strict source-stream census
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/record_stream.py"
+      - "tests/test_record_stream.py"
+      - "docs/research/strict-source-stream.md"
+      - ".github/workflows/record-census.yml"
+  workflow_dispatch:
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch all audited text families at immutable upstream commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/
+          /data/corpus_secondary/
+          /data/paratext/
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Verify source provenance and parse every JSONL row
+        shell: python
+        run: |
+          from pathlib import Path
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.record_stream import iter_family
+
+          root = Path("upstream")
+          verified = verify_source(root)
+          assert verified.revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          expected = {
+              "primary": (3909, 1_970_947),
+              "secondary": (533, 307_085),
+              "paratext": (5, 15_958),
+          }
+          for family, (expected_files, expected_rows) in expected.items():
+              directory = root / "data" / {
+                  "primary": "corpus",
+                  "secondary": "corpus_secondary",
+                  "paratext": "paratext",
+              }[family]
+              # A zero-byte secondary witness file is present in the pinned
+              # source. Counting filenames via yielded rows silently drops it.
+              files = sorted(directory.glob("*.jsonl"))
+              empty_files = [p.name for p in files if p.stat().st_size == 0]
+              row_count = 0
+              for row in iter_family(root, family):
+                  row_count += 1
+                  assert row.ordinal > 0
+                  assert row.text is not None
+              assert (len(files), row_count) == (expected_files, expected_rows), (
+                  family, len(files), row_count, empty_files
+              )
+              print(
+                  f"{family}: {len(files)} files; {row_count} validated rows; "
+                  f"empty containers={empty_files}"
+              )
