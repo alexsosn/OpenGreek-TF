@@ -286,11 +286,29 @@ def write_native_fact_probe(record: ParsedRecord, destination: str | Path) -> No
 
 def read_native_fact_graph(destination: str | Path) -> FactGraph:
     """Independent native TF load: read every fact, parent edge, type, and order."""
-    api = Fabric(locations=str(destination), silent="deep").load(
-        _ALL_FEATURES, silent="deep"
+    fabric = Fabric(locations=str(destination), silent="deep")
+    catalog = fabric.explore(silent="deep")
+    if not catalog:
+        raise FactGraphError("cannot discover native TF source fact features")
+    present = set(catalog["nodes"]) | set(catalog["edges"])
+    required = {
+        "atom_kind", "source_family", "source_file", "source_ordinal",
+        "passage_key", "fact_id", "fact_kind", "fact_position", "has_fact",
+    }
+    if required - present:
+        raise FactGraphError("native TF graph lacks required structural features")
+    api = fabric.load(
+        " ".join(n for n in _ALL_FEATURES.split() if n in present), silent="deep"
     )
     if not api:
         raise FactGraphError("cannot load native TF source fact graph")
+
+    def value(name: str, node: int) -> str | int | None:
+        """Absent optional features differ from present empty/zero values."""
+        if name not in present:
+            return None
+        return getattr(api.F, name).v(node)
+
     passages = api.F.otype.s("passage")
     if len(passages) != 1:
         raise FactGraphError("native fact probe must contain one passage")
@@ -302,7 +320,7 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
         s for s in api.F.otype.s("atom")
         if api.F.atom_kind.v(s) == "source-row"
     )
-    if len(row_atoms) != 1 or api.F.form.v(row_atoms[0]) is not None:
+    if len(row_atoms) != 1 or value("form", row_atoms[0]) is not None:
         raise FactGraphError("fact graph requires one non-text source-row atom")
     source_atom = row_atoms[0]
     if source_atom not in api.E.oslots.s(passage):
@@ -312,7 +330,7 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
             raise FactGraphError("native source fact is not anchored to source row")
     by_handle: dict[int, int] = {}
     for handle in nodes:
-        ident = api.F.fact_id.v(handle)
+        ident = value("fact_id", handle)
         if type(ident) is not int or ident in by_handle.values():
             raise FactGraphError("native fact id missing or duplicated")
         by_handle[handle] = ident
@@ -329,12 +347,12 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
 
     result: list[FactNode] = []
     for handle, ident in by_handle.items():
-        kind = api.F.fact_kind.v(handle)
+        kind = value("fact_kind", handle)
         if kind not in ("object", "array", "str", "int", "bool"):
             raise FactGraphError("unknown native fact kind")
-        present = [("str", api.F.fact_str.v(handle)),
-                   ("int", api.F.fact_int.v(handle)),
-                   ("bool", api.F.fact_bool.v(handle))]
+        present = [("str", value("fact_str", handle)),
+                   ("int", value("fact_int", handle)),
+                   ("bool", value("fact_bool", handle))]
         nonempty = [(name, val) for name, val in present if val is not None]
         if kind in ("object", "array"):
             if nonempty:
@@ -359,15 +377,15 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
         result.append(
             FactNode(
                 id=ident, parent_id=parent.get(handle),
-                position=api.F.fact_position.v(handle),
-                key=api.F.fact_key.v(handle), index=api.F.fact_index.v(handle),
+                position=value("fact_position", handle),
+                key=value("fact_key", handle), index=value("fact_index", handle),
                 kind=kind, value=value,
             )
         )
     graph = FactGraph(
-        family=api.F.source_family.v(passage),
-        relative_file=api.F.source_file.v(passage),
-        ordinal=api.F.source_ordinal.v(passage),
+        family=value("source_family", passage),
+        relative_file=value("source_file", passage),
+        ordinal=value("source_ordinal", passage),
         nodes=tuple(result),
     )
     decode_fact_graph(graph)
