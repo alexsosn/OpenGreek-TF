@@ -48,3 +48,22 @@ into native TF node/edge topology follows #3 and separate #5 increments.
 
 No semantic sidecars and no normalized/replaced source text; source lineage
 is an ordinary first-class immutable record attribute for later graph output.
+
+## Adversarial schema refinement from the full census
+
+The nested type census also supports **tagged source variants**, not just
+independently optional keys:
+
+- Among 307,085 secondary rows, 306,674 have both `rank` and
+  `secondary_reason`, whereas 411 have the three-field `displaced_by`
+  record (`date`, `pass`, `reason`). No other displacement representation
+  is accepted by the parser.
+- Of 1,757 primary `merged_read` objects, 1,745 have the complete
+  `guessed` / `substituted` / `with` record, while 12 use the distinct
+  `guesses` / `note` / `of` record. The parser must not accept hybrid or
+  partially specified objects as valid published source facts.
+
+These rules are direct observations of the verified release and the audit's
+field-presence counts, not assumptions about arbitrary future versions.
+Unknown additional fields or newly published variants require a deliberate
+schema update and a new source pin, rather than permissive copying.
