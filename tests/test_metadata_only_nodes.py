@@ -18,7 +18,6 @@ def test_walker_removes_unlinked_metadata_entities(tmp_path: Path) -> None:
 
     def director(cv: CV) -> None:
         orphan = cv.node("author")
-        cv.feature(orphan, entity_id="oga000002")
         cv.terminate(orphan)
 
         passage = cv.node("passage")
@@ -37,7 +36,6 @@ def test_walker_removes_unlinked_metadata_entities(tmp_path: Path) -> None:
             "fmt:text-orig-full": "{form}",
         },
         featureMeta={
-            "entity_id": {"description": "source opaque identity"},
             "locus": {"description": "source label"},
             "form": {"description": "literal text form"},
         },
