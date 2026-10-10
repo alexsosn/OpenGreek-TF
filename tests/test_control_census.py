@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from itertools import chain
 from pathlib import Path
 
 import pytest
 
-from opengreek_tf.control_census import count_controls, main
-from opengreek_tf.record_stream import iter_family
+from opengreek_tf.control_census import ControlLocation, count_controls, main
+from opengreek_tf.record_stream import ParsedRecord, iter_family
 
 
 def _source(root: Path, family: str, name: str, records: list[dict[str, object]]) -> None:
@@ -50,7 +51,7 @@ def _fixture(root: Path) -> None:
     }])
 
 
-def _rows(root: Path):
+def _rows(root: Path) -> Iterator[ParsedRecord]:
     return chain.from_iterable(
         iter_family(root, family)
         for family in ("primary", "secondary", "paratext")
@@ -149,7 +150,7 @@ def test_streaming_sink_receives_every_location_despite_sample_cap(
     tmp_path: Path,
 ) -> None:
     _fixture(tmp_path)
-    received = []
+    received: list[ControlLocation] = []
     result = count_controls(_rows(tmp_path), sample_limit=0, on_occurrence=received.append)
     assert result.samples == ()
     assert len(received) == 5
