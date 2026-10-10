@@ -77,7 +77,10 @@ def _tf_roundtrip(tmp_path: Path, text: str) -> str | None:
     loaded = Fabric(locations=str(output), silent="deep").load(
         "form locus", silent="deep"
     )
-    return loaded.F.form.v(1) if loaded else None
+    if not loaded:
+        return None
+    value: str | None = loaded.F.form.v(1)
+    return value
 
 
 def test_native_tf_baseline_lf_tab_and_backslash_roundtrip(tmp_path: Path) -> None:
