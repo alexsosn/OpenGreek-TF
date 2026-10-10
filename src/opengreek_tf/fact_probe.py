@@ -111,7 +111,9 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
         otext={
             "sectionTypes": "passage",
             "sectionFeatures": "passage_key",
-            "fmt:text-orig-full": "{form}",
+            # A one-record empty-text proof has no text atoms or form feature.
+            # TF rejects a format referencing a nonexistent node feature.
+            **({"fmt:text-orig-full": "{form}"} if record.text else {}),
         },
         featureMeta={
             name: {"description": f"Native source fact {name}"}
@@ -134,8 +136,9 @@ def read_fact_probe(destination: str | Path) -> FactGraph:
     required = {
         "source_file", "source_ordinal", "fact_count", "fact_digest",
         "atom_kind", "fact_id", "fact_kind", "fact_position", "has_fact",
+        "passage_key",
     }
-    optional = {"fact_key", "fact_text", "fact_int"}
+    optional = {"fact_key", "fact_text", "fact_int", "form"}
     declared = set(discovered["nodes"]) | set(discovered["edges"])
     if not required.issubset(declared):
         raise FactGraphError("missing mandatory native source-fact features")
@@ -150,6 +153,8 @@ def read_fact_probe(destination: str | Path) -> FactGraph:
     physical_ordinal = api.F.source_ordinal.v(passage)
     if not isinstance(physical_file, str) or type(physical_ordinal) is not int:
         raise FactGraphError("loaded passage lost physical occurrence identity")
+    if api.F.passage_key.v(passage) != f"{physical_file}:{physical_ordinal}":
+        raise FactGraphError("loaded passage key disagrees with physical source identity")
 
     fact_handles = api.F.otype.s("sourceFact")
     by_local_id: dict[int, int] = {}
@@ -209,15 +214,40 @@ def read_fact_probe(destination: str | Path) -> FactGraph:
         declared_size=count,
         digest=digest,
     )
-    restore_fact_fields(graph)
-    # All nodes are truly associated with this source row, not other texts.
+    fields = restore_fact_fields(graph)
+    expected_text = fields.get("text")
+    if type(expected_text) is not str:
+        raise FactGraphError("loaded source fact graph has no string text field")
+
+    # Independently reconcile the TF slot layer with the restored fact layer.
+    # Validating only sourceFact values would miss a damaged readable passage.
+    passage_slots = tuple(api.E.oslots.s(passage))
+    all_atoms = tuple(api.F.otype.s("atom"))
+    if passage_slots != all_atoms:
+        raise FactGraphError("native passage has missing or unrelated text atoms")
     row_atoms = {
-        slot
-        for slot in api.E.oslots.s(passage)
+        slot for slot in passage_slots
         if api.F.atom_kind.v(slot) == "source-row"
     }
-    if len(row_atoms) != 1:
-        raise FactGraphError("source passage must contain one authentic row atom")
+    if len(row_atoms) != 1 or passage_slots[-1] not in row_atoms:
+        raise FactGraphError("source passage must end with one authentic row atom")
+    source_row_atom = passage_slots[-1]
+    if "form" in declared and api.F.form.v(source_row_atom) is not None:
+        raise FactGraphError("source row atom must have no text form")
+
+    runs: list[str] = []
+    for slot in passage_slots[:-1]:
+        if api.F.atom_kind.v(slot) != "text":
+            raise FactGraphError("native text atom has unexpected kind or position")
+        value = api.F.form.v(slot) if "form" in declared else None
+        if type(value) is not str or not value:
+            raise FactGraphError("native text atom has missing or empty form")
+        runs.append(value)
+    if "".join(runs) != expected_text:
+        raise FactGraphError("loaded native text atoms disagree with source facts")
+    if expected_text and api.T.text(passage, fmt="text-orig-full") != expected_text:
+        raise FactGraphError("TF formatted text disagrees with source facts")
+
     for handle in fact_handles:
         if set(api.E.oslots.s(handle)) != row_atoms:
             raise FactGraphError("fact node not anchored to the correct source row")
