@@ -304,11 +304,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.action == "release":
             if not args.token:
                 raise ClaimError("release requires --token")
-            actor = _actor(api)
+            releasing_actor = _actor(api)
             own = [
                 c for item in comments
                 if (c := _parse_claim(item, args.issue, now)) is not None
-                and c.token == args.token and c.author == actor
+                and c.token == args.token and c.author == releasing_actor
             ]
             if len(own) != 1:
                 raise ClaimError("no unique live claim owned by authenticated actor")
