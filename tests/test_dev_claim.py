@@ -244,3 +244,40 @@ def test_cli_rechecks_posted_claim_and_relinquishes_if_race_lost(
     assert len(api.released) == int(racing_worker)
     if not racing_worker:
         assert report["your_token"]
+
+
+def test_release_succeeds_even_when_own_pr_remains_open(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Relinquishing one's comment is independent of an own open PR."""
+    class FakeAPI:
+        def __init__(self, repo: str, token: str | None = None) -> None:
+            self.released = False
+
+        def snapshot(
+            self, issue: int
+        ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
+            pr = {"number": 38, "state": "open", "title": "Implement (#37)",
+                  "head": {"ref": "dev/37-owned"}, "user": {"login": "alice"}}
+            return ("open", [pr], [] if self.released else [
+                _comment(55, "lease-owner", user="alice", minutes_ago=1)
+            ])
+
+        def get(self, path: str) -> dict[str, str]:
+            assert path == "/user"
+            return {"login": "alice"}
+
+        def patch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+            assert path == "/issues/comments/55"
+            self.released = True
+            return payload
+
+    fake = FakeAPI("alexsosn/OpenGreek-TF")
+    monkeypatch.setenv("GITHUB_TOKEN", "fake-test-token")
+    monkeypatch.setattr(protocol, "GithubAPI", lambda repo, token: fake)
+    code = protocol.main(["release", "--issue", "37", "--token", "lease-owner"])
+    report = json.loads(capsys.readouterr().out)
+    assert fake.released
+    assert code == 0
+    assert report["released"] is True
+    assert report["remaining_preflight"]["allowed"] is False
