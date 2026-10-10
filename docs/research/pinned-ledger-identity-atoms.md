@@ -28,3 +28,9 @@ Build a small, **real source data-backed** proof rather than another fake catalo
 ## Explicit non-goals
 
 This proof does *not* cover the 11,075-work broader catalog, 3,315-author registry, alternative IDs/crosswalks, complete source nested fact graph, scalable full-corpus materialization, generic registry metadata, browser usability, or freeze #3. Keep parent #20 open until broader catalog/retired identity conservation, browser and performance gates are proven. No semantic sidecars, invented word tokens, phantom passages or guessed source authorship.
+
+## Real TF 13.1 conversion caveat surfaced by initial pinned run
+
+The first immutable-ledger workflow [run 38082602449](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38082602449) fetched and verified the actual two ledgers and passed source cardinalities, but the native `CV.walk` failed in `_prepareMeta` with `UnboundLocalError: textFormats` when passed `otext={}`. An absent text *format declaration* is therefore not a viable TF 13.1 CV configuration, even for a corpus consisting of genuinely non-textual source records.
+
+The supported bounded solution declares `fmt:metadata-id={source_record_id}`. This formats an **existing opaque source identifier**, not a fake Greek word, phantom text span or empty passage. The per-source metadata atom still has **no `form`**; the test explicitly checks `T.text(registry_node, fmt="metadata-id")` equals the actual source ID after native `Fabric.load()`. A production advanced app must prominently distinguish registry metadata display from Greek textual editions; the default web text format remains part of #3/#10.
