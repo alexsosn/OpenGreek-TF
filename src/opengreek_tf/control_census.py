@@ -22,7 +22,7 @@ FAMILIES: tuple[Family, ...] = ("primary", "secondary", "paratext")
 
 @dataclass(frozen=True, slots=True)
 class ControlLocation:
-    """Location of one unsupported control codepoint in the source value."""
+    """Location of one source codepoint requiring TF compatibility review."""
 
     family: str
     relative_file: str
@@ -58,7 +58,7 @@ def _string_values(value: FieldValue, path: str) -> Iterator[tuple[str, str]]:
             yield from _string_values(item, f"{path}.{name}")
 
 
-def _unsafe_control(codepoint: int) -> bool:
+def _tracked_control(codepoint: int) -> bool:
     """Unicode Cc (C0/C1, DEL) except TAB/LF; CR needs a TF proof."""
     return (codepoint < 32 and codepoint not in (9, 10)) or 127 <= codepoint <= 159
 
@@ -90,7 +90,7 @@ def count_controls(
             for field_path, source_text in _string_values(value, name):
                 for offset, character in enumerate(source_text):
                     code = ord(character)
-                    if not _unsafe_control(code):
+                    if not _tracked_control(code):
                         continue
                     affected = True
                     codepoint = f"U+{code:04X}"
