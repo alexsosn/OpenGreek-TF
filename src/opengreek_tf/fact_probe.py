@@ -127,11 +127,19 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
 def read_fact_probe(destination: str | Path) -> FactGraph:
     """Reconstruct the fact graph from *loaded native TF*, never original rows."""
 
-    api = Fabric(locations=str(destination), silent="deep").load(
-        "source_file source_ordinal fact_count fact_digest atom_kind "
-        "fact_id fact_kind fact_position "
-        "fact_key fact_text fact_int has_fact", silent="deep",
-    )
+    fabric = Fabric(locations=str(destination), silent="deep")
+    discovered = fabric.explore(silent="deep")
+    if not discovered:
+        raise FactGraphError("cannot discover native TF source-fact features")
+    required = {
+        "source_file", "source_ordinal", "fact_count", "fact_digest",
+        "atom_kind", "fact_id", "fact_kind", "fact_position", "has_fact",
+    }
+    optional = {"fact_key", "fact_text", "fact_int"}
+    declared = discovered["nodes"] | discovered["edges"]
+    if not required.issubset(declared):
+        raise FactGraphError("missing mandatory native source-fact features")
+    api = fabric.load(" ".join(sorted(required | (optional & declared))), silent="deep")
     if not api:
         raise FactGraphError("cannot load native source-fact dataset")
     passages = api.F.otype.s("passage")
