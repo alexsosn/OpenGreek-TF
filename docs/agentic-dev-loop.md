@@ -6,6 +6,37 @@ OpenGreek-TF follows the strict issue-driven loop used across the related Text-F
 
 Choose an unblocked issue that advances #14. Read the issue, linked discussion and existing PRs.
 
+For every *new* issue, run the live GitHub preflight **before branching or
+starting expensive code/CI work**:
+
+```bash
+python -m opengreek_tf.dev_claim check --issue 37
+GITHUB_TOKEN=... python -m opengreek_tf.dev_claim claim --issue 37
+```
+
+The claim command prints a unique `your_token` on success. Preserve it for
+your run, not in repository files. A blocked check (exit 2) means inspect the
+active PR or claimant and contribute review/tests instead of duplicating work.
+An API/pagination error (exit 3) means **do not proceed**.
+
+Use `check` again before opening a PR, before major new commits, and before
+merging. Once your own PR exists, an authenticated caller can exempt *only that
+PR*, not someone else's, using:
+
+```bash
+GITHUB_TOKEN=... python -m opengreek_tf.dev_claim check \
+  --issue 37 --own-pr 38 --token YOUR_TOKEN
+GITHUB_TOKEN=... python -m opengreek_tf.dev_claim release \
+  --issue 37 --token YOUR_TOKEN
+```
+
+The lease is advisory: winner is the oldest active server-dated claim
+comment, and even a successful claim has a race window before a competing
+comment or PR appears. GitHub comments are **not an atomic lock**; the
+protocol never grants permission to overwrite/close another worker's branch.
+A claim expires within 60 minutes, even if the purported expiry is later.
+See `docs/research/issue-claims.md`.
+
 ## 2. Research
 
 Inspect real upstream files, current upstream code/docs, Text-Fabric behavior, BHSA precedent, and Agora contracts relevant to the issue.
