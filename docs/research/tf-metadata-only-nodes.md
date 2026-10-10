@@ -38,17 +38,24 @@ to empty sets, and ordinary typed node features.
 does not explicitly require that the mapping's set be nonempty. This candidate
 still requires an actual save/load/query proof, not just source inspection.
 
-Load the resulting dataset through `Fabric.load` and assert:
+This candidate was **rejected by direct TF 13.1 source inspection**:
+the plain-text edge parser reports `emptyNode2Spec` for empty `oslots`
+rows, and loading the dataset fails. The executable regression test must
+assert this failure rather than claiming that `Fabric.save=True` establishes
+a round-trippable dataset.
 
-1. both author nodes exist in `F.otype.s("author")`;
-2. their exact `oga` IDs and `status` values survive and are distinguishable;
-3. `E.oslots.s(author)` returns an empty set for both;
-4. the real passage/word slot is not changed, and `F.otype` remains valid;
-5. a separate edge feature can link an entity to a textual work/occurrence if
-   such a relation is source-declared;
-6. an author without linked passages survives regardless;
-7. no phantom word slots, fake authorship, empty-content passage, semantic
-   JSON sidecar or serialized pseudo-list is created.
+For the **alternative source-atom-slot proof**, `Fabric.load` must show:
+
+1. served and retired registry author nodes survive as `F.otype.s("author")`;
+2. exact `oga` identities and statuses stay distinguishable;
+3. each metadata author spans only its own genuine registry-record atom,
+   not a word or passage of Greek text;
+4. actual passage and word nodes map only to real textual atoms;
+5. typed `has_author` edges can refer from a real passage to a real author
+   without changing either node's text extent;
+6. an unserved or retired author with no passage links is still queryable;
+7. no phantom word, empty-content passage, invented authorship,
+   semantic JSON/XML feature blob, or semantic sidecar is created.
 
 If direct `Fabric.save` or TF precomputation fails, record the precise
 failure and investigate Text-Fabric's low-level format/graph limitations.
