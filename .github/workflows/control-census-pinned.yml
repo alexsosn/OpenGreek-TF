@@ -1,0 +1,93 @@
+name: Pinned source control-codepoint census
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/control_census.py"
+      - "tests/test_control_census.py"
+      - "docs/research/tf-control-characters.md"
+      - ".github/workflows/control-census-pinned.yml"
+  workflow_dispatch:
+
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch audited families at exact supported Open Greek commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/
+          /data/corpus_secondary/
+          /data/paratext/
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Scan every audited text row and preserve all control locations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m opengreek_tf.control_census upstream \
+            --locations-output control-locations.jsonl > control-summary.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from opengreek_tf.source import verify_source
+
+          verified = verify_source(Path("upstream"))
+          assert verified.revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          expected = {
+              "primary": (3909, 1_970_947),
+              "secondary": (533, 307_085),
+              "paratext": (5, 15_958),
+          }
+          report = json.loads(Path("control-summary.json").read_text())
+          for family, (expected_files, expected_rows) in expected.items():
+              directory = Path("upstream/data") / {
+                  "primary": "corpus",
+                  "secondary": "corpus_secondary",
+                  "paratext": "paratext",
+              }[family]
+              actual_files = len(list(directory.glob("*.jsonl")))
+              actual_rows = report["records_by_family"].get(family, 0)
+              assert (actual_files, actual_rows) == (expected_files, expected_rows), (
+                  family, actual_files, actual_rows
+              )
+          events = sum(report["occurrences_by_codepoint"].values())
+          assert sum(1 for _ in Path("control-locations.jsonl").open()) == events
+          report["verified_upstream_commit"] = verified.revision
+          report["files_by_family"] = {name: total[0] for name, total in expected.items()}
+          Path("control-summary.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Source control-codepoint census\n\n")
+              summary.write(f"Verified commit: `{verified.revision}`\n\n")
+              summary.write(f"Rows with controls: **{report['affected_rows']}**; "
+                            f"CRLF pairs: **{report['crlf_pairs']}**\n\n")
+              for cp, count in sorted(report["occurrences_by_codepoint"].items()):
+                  summary.write(f"- `{cp}`: {count}\n")
+          PY
+      - name: Retain provenance-only evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-control-census
+          path: |
+            control-summary.json
+            control-locations.jsonl
+          retention-days: 14
