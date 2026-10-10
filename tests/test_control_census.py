@@ -177,3 +177,30 @@ def test_c1_range_including_next_line_is_not_silently_ignored(tmp_path: Path) ->
         ("data/paratext/c1.jsonl", 1, "U+0085"),
         ("data/paratext/c1.jsonl", 2, "U+009F"),
     }
+
+
+def test_text_fabric_roundtrips_del_found_in_pinned_source(tmp_path: Path) -> None:
+    """The pinned control census located DEL in a real primary text row."""
+    from tf.convert.walker import CV
+    from tf.fabric import Fabric
+
+    original = "α\x7fβ"
+
+    def director(cv: CV) -> None:
+        slot = cv.slot()
+        cv.feature(slot, form=original)
+
+    target = tmp_path / "tf"
+    assert CV(Fabric(locations=str(target), silent="deep"), silent="deep").walk(
+        director,
+        slotType="atom",
+        generic={"source": "control characterization"},
+        otext={"fmt:text-orig-full": "{form}"},
+        featureMeta={"form": {"description": "raw codepoints"}},
+        warn=False,
+    )
+    api = Fabric(locations=str(target), silent="deep").load("form", silent="deep")
+    assert api
+    slot = api.F.otype.s("atom")[0]
+    assert api.F.form.v(slot) == original
+    assert api.T.text(slot, fmt="text-orig-full") == original
