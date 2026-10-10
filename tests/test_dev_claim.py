@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 
 import opengreek_tf.dev_claim as protocol
-
 from opengreek_tf.dev_claim import (
     ClaimError,
     GithubAPI,
