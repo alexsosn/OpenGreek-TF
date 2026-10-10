@@ -29,8 +29,7 @@ text rows must be examined, not just the primary `text` field:
 
 `control_census.py` uses the audited, strictly typed `record_stream`
 parser and recursively inspects every nested source string, including arrays
-and ordered objects. It counts each unsafe C0 control (excluding TAB and LF)
-and DEL, distinguishes CRLF pairs, and reports affected physical rows.
+and ordered objects. It counts each Unicode Cc control (C0, DEL and C1, excluding TAB and LF), distinguishes CRLF pairs, and reports affected physical rows.
 It uses 0-based Python Unicode-codepoint offsets within the leaf field value
 and preserves the exact `relative_file:ordinal:field_path` source location.
 Field names are schema-audited and not treated as source text.
