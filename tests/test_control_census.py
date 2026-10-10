@@ -143,3 +143,17 @@ def test_text_fabric_13_1_cannot_preserve_raw_cr_in_form(
     slot = api.F.otype.s("atom")[0]
     assert api.F.form.v(slot) != original
     assert api.T.text(slot, fmt="text-orig-full") != original
+
+
+def test_streaming_sink_receives_every_location_despite_sample_cap(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path)
+    received = []
+    result = count_controls(_rows(tmp_path), sample_limit=0, on_occurrence=received.append)
+    assert result.samples == ()
+    assert len(received) == 5
+    assert sum(result.occurrences_by_codepoint.values()) == 5
+    assert {(location.field_path, location.offset) for location in received} >= {
+        ("text_lines[1]", 1), ("provenance.note", 1),
+    }
