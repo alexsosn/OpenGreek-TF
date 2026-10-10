@@ -60,7 +60,7 @@ def _run(
         "conclusion": conclusion,
         "event": "pull_request",
         "run_attempt": attempt,
-        "pull_requests": [{"number": number}],
+        "pull_requests": [{"number": number, "base": {"sha": BASE}, "head": {"sha": head}}],
     }
 
 
@@ -219,3 +219,10 @@ def test_inconsistent_pagination_counts_cannot_pass(
     )
     with pytest.raises(MergeGateError):
         fetch_runs(api, HEAD)
+
+
+def test_ci_on_same_head_against_previous_base_is_not_current_green() -> None:
+    run = _run()
+    run["pull_requests"][0]["base"]["sha"] = "f" * 40
+    with pytest.raises(MergeGateError, match="base|CI"):
+        _gate(runs=[run], required=("CI",))
