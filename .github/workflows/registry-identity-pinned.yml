@@ -42,14 +42,18 @@ jobs:
           git -C upstream fetch --depth 1 --filter=blob:none origin \
             338aa27310b3cfe2588a993b4d113b503597d70f
           git -C upstream checkout --detach FETCH_HEAD
-      - name: Load exact source records and reconstruct their native TF atoms
+      - name: Materialize and independently validate all 5,460 pinned identity records
         shell: python
         run: |
+          import json
+          import time
+          from dataclasses import asdict
           from pathlib import Path
 
           from tf.fabric import Fabric
-          from opengreek_tf.registry_probe import (
-              parse_ledger, write_registry_probe, read_registry_probe,
+          from opengreek_tf.registry_probe import parse_ledger
+          from opengreek_tf.registry_snapshot import (
+              write_full_registry_snapshot, validate_full_registry_snapshot,
           )
           from opengreek_tf.source import verify_source
 
@@ -64,41 +68,42 @@ jobs:
           assert sum(row.status == "retired" for row in authors) == 16
           assert sum(row.status == "retired" for row in works) == 35
           assert sum(bool(row.former_slugs) for row in works) == 6
+          source_aliases = sum(len(row.former_slugs) for row in (*authors, *works))
 
-          author_ids = ("oga000001", "oga000330")
-          work_ids = ("ogc000772", "ogc000839")
-          selected = (
-              *(row for row in authors if row.identifier in author_ids),
-              *(row for row in works if row.identifier in work_ids),
-          )
-          assert len(selected) == 4
-          alias = next(row for row in selected if row.identifier == "ogc000772")
-          assert alias.former_slugs == ("choerilus.tituli-p-oxy-11-1399",)
-
-          destination = Path("registry-ledger-tf")
-          write_registry_probe(
-              root, destination, authors=author_ids, works=work_ids,
-          )
-          recovered = read_registry_probe(destination)
-          assert recovered == selected
-          assert len(recovered) == 4
-          assert not (destination / "form.tf").exists()
-
-          api = Fabric(locations=str(destination), silent="deep").load(
+          out = Path("full-identity-ledger-tf")
+          started = time.perf_counter()
+          report = write_full_registry_snapshot(root, out)
+          built_seconds = time.perf_counter() - started
+          started = time.perf_counter()
+          assert validate_full_registry_snapshot(root, out) == report
+          validated_seconds = time.perf_counter() - started
+          assert asdict(report) == {
+              "authors": 1516,
+              "works": 3944,
+              "retired_authors": 16,
+              "retired_works": 35,
+              "former_slug_facts": source_aliases,
+              "source_atoms": 5460,
+          }
+          api = Fabric(locations=str(out), silent="deep").load(
               "atom_kind source_file source_record_id source_ordinal "
               "opaque_id registry_slug registry_status alias_value "
               "alias_position has_former_slug",
               silent="deep",
           )
           assert api
-          assert len(api.F.otype.s("registryAuthor")) == 2
-          assert len(api.F.otype.s("registryWork")) == 2
-          assert len(api.F.otype.s("formerSlug")) == 1
+          assert len(api.F.otype.s("atom")) == 5460
+          assert len(api.F.otype.s("registryAuthor")) == 1516
+          assert len(api.F.otype.s("registryWork")) == 3944
+          assert len(api.F.otype.s("formerSlug")) == source_aliases
           assert api.F.otype.s("word") == ()
           assert api.F.otype.s("passage") == ()
-          assert len(api.F.otype.s("atom")) == 4
-          print(
-              "Real pinned identity ledgers: 1,516 author IDs and 3,944 work IDs; "
-              "4 genuine source-record atoms, retired entities and ordered "
-              "former slugs survive independent native TF load"
-          )
+          assert not (out / "form.tf").exists()
+          byte_size = sum(p.stat().st_size for p in out.glob("*.tf"))
+          print(json.dumps({
+              "full_source_ledger_validation": "PASS",
+              **asdict(report),
+              "build_plus_initial_validation_seconds": round(built_seconds, 3),
+              "second_independent_validation_seconds": round(validated_seconds, 3),
+              "native_tf_file_bytes": byte_size,
+          }, sort_keys=True))
