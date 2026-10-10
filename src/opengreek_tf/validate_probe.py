@@ -205,6 +205,7 @@ def validate_primary_probe(
             f"{ctx}: source-row atom invents displayed text",
         )
         original_text = row["text"]
+        assert isinstance(original_text, str)  # validated independently during JSONL read
         _check(
             "".join(text_parts) == original_text,
             f"{ctx}: exact source text differs from loaded TF form slots",
