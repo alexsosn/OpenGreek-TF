@@ -83,6 +83,26 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
         cv.edge(passage, handles[0], has_fact=None)
         cv.terminate(passage)
 
+    # TF 13.1 refuses metadata declarations for node features that do not
+    # actually occur. Keep the source model honest: never fabricate values
+    # merely to satisfy a feature declaration.
+    available = {
+        "atom_kind", "passage_key", "source_file", "source_ordinal",
+        "fact_count", "fact_digest", "fact_kind", "fact_id", "fact_position",
+        "has_fact",
+    }
+    if any(fact.key is not None for fact in graph.nodes):
+        available.add("fact_key")
+    if any(fact.kind == "str" for fact in graph.nodes):
+        available.add("fact_text")
+    if any(fact.kind in {"int", "bool"} for fact in graph.nodes):
+        available.add("fact_int")
+    if record.text:
+        available.add("form")
+    integer_features = {"source_ordinal", "fact_count", "fact_id", "fact_position"}
+    if "fact_int" in available:
+        integer_features.add("fact_int")
+
     cv = CV(Fabric(locations=str(output), silent="deep"), silent="deep")
     result = cv.walk(
         director,
@@ -95,16 +115,9 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
         },
         featureMeta={
             name: {"description": f"Native source fact {name}"}
-            for name in (
-                "atom_kind", "form", "passage_key", "source_file",
-                "source_ordinal", "fact_count", "fact_digest",
-                "fact_kind", "fact_id", "fact_position",
-                "fact_key", "fact_text", "fact_int", "has_fact",
-            )
+            for name in sorted(available)
         },
-        intFeatures={
-            "source_ordinal", "fact_count", "fact_id", "fact_position", "fact_int"
-        },
+        intFeatures=integer_features,
         warn=False,
     )
     if not result:
