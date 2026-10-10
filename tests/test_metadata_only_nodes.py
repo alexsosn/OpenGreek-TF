@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tf.convert.walker import CV  # type: ignore[import-untyped]
 from tf.fabric import Fabric  # type: ignore[import-untyped]
 
@@ -53,7 +55,7 @@ def test_walker_removes_unlinked_metadata_entities(tmp_path: Path) -> None:
 
 
 def test_native_tf_save_load_rejects_empty_oslots_edges(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The plain-text TF reader rejects empty oslots edges after saving them."""
     output = tmp_path / "native"
@@ -81,7 +83,7 @@ def test_native_tf_save_load_rejects_empty_oslots_edges(
         },
         metaData={
             "otype": {"valueType": "str"},
-            "oslots": {"valueType": "int"},
+            "oslots": {"valueType": "str"},
             "otext": {
                 "sectionTypes": "passage",
                 "sectionFeatures": "locus",
@@ -107,3 +109,4 @@ def test_native_tf_save_load_rejects_empty_oslots_edges(
         "form entity_id entity_status locus written_by", silent="deep"
     )
     assert api is False
+    assert "oslots: emptyNode2Spec" in capsys.readouterr().err
