@@ -164,7 +164,7 @@ def test_scope_tampering_and_dirty_worktree_are_never_accepted(
                     expected_files=(1, 1, 1))
     text = root / "data" / "corpus" / "one.jsonl"
     text.write_text('{"text":"altered"}\n', encoding="utf-8")
-    with pytest.raises((PinnedCacheError, Exception)):
+    with pytest.raises(PinnedCacheError):
         verify_checkout(root, identity=identity, expected_files=(1, 1, 1))
 
 
@@ -181,3 +181,26 @@ def test_source_directory_must_be_new_and_not_symlink(
     link.symlink_to(root, target_is_directory=True)
     with pytest.raises(PinnedCacheError):
         prepare_source(link, identity=identity, patterns=patterns)
+
+
+def test_syntactically_valid_corrupt_git_object_triggers_verified_clean_refetch(
+    source_release: tuple[ReleaseIdentity, tuple[str, ...]],
+    tmp_path: Path,
+) -> None:
+    """Do not trust an object merely because it has a valid SHA-shaped name."""
+    identity, patterns = source_release
+    root = tmp_path / "checksum-poison"
+    prepare_source(root, identity=identity, patterns=patterns)
+    loose = root / ".git" / "objects" / "ab"
+    loose.mkdir()
+    (loose / ("0" * 38)).write_bytes(b"not a valid zlib Git object")
+    # The initial path-layout guard is intentionally not an integrity check.
+    check_cached_objects(root)
+    result = checkout_source(
+        root, identity=identity, patterns=patterns, expected_files=(1, 1, 1)
+    )
+    assert result.recovery_attempted
+    verify_checkout(root, identity=identity, expected_files=(1, 1, 1))
+    assert (root / "data" / "corpus" / "one.jsonl").read_text(
+        encoding="utf-8"
+    ) == '{"text":"ἀρχή"}\\n'
