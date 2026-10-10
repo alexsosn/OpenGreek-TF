@@ -36,6 +36,8 @@ def test_source_atom_slots_preserve_unserved_entities_without_fake_words(
             cv.feature(atom, atom_kind="registry-record")
             cv.feature(author, entity_id=identity, entity_status=status)
             cv.terminate(author)
+            if status == "served":
+                cv.edge(passage, author, has_author=None)
 
     cv = CV(tf, silent="deep")
     assert cv.walk(
@@ -49,12 +51,13 @@ def test_source_atom_slots_preserve_unserved_entities_without_fake_words(
             "locus": {"description": "Unmodified source citation label"},
             "entity_id": {"description": "Opaque source entity identifier"},
             "entity_status": {"description": "Source entity status"},
+            "has_author": {"description": "Source-declared authorship relation"},
         },
         warn=False,
     )
 
     api = Fabric(locations=str(output), silent="deep").load(
-        "atom_kind form source_record_id locus entity_id entity_status",
+        "atom_kind form source_record_id locus entity_id entity_status has_author",
         silent="deep",
     )
     assert api
@@ -82,6 +85,7 @@ def test_source_atom_slots_preserve_unserved_entities_without_fake_words(
     assert api.F.form.v(text_slots[0]) == "λόγος"
     passage = api.F.otype.s("passage")[0]
     assert set(api.E.oslots.s(passage)) == set(text_slots)
+    assert set(api.E.has_author.f(passage)) == {ids["oga000001"]}
 
     for author in author_nodes:
         assert set(api.E.oslots.s(author)).isdisjoint(text_slots)
