@@ -5,6 +5,8 @@ Independent of Text-Fabric: no JSON blobs, lexical inference or sidecars.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
@@ -35,6 +37,28 @@ class FactGraph:
 
     occurrence_key: tuple[str, int]
     nodes: tuple[FactNode, ...]
+    declared_size: int
+    digest: str
+
+
+def _digest(
+    occurrence_key: tuple[str, int], nodes: tuple[FactNode, ...]
+) -> str:
+    """Hash complete typed graph semantics, including order and source identity."""
+    h = hashlib.sha256()
+    payloads: list[object] = [list(occurrence_key)]
+    payloads.extend(
+        [n.node_id, n.parent_id, n.position, n.key, n.kind, n.value]
+        for n in nodes
+    )
+    for payload in payloads:
+        h.update(
+            json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        )
+        h.update(b"\\n")
+    return h.hexdigest()
 
 
 def build_fact_graph(record: ParsedRecord) -> FactGraph:
@@ -86,13 +110,23 @@ def build_fact_graph(record: ParsedRecord) -> FactGraph:
         return node_id
 
     visit(record.fields, None, 0, None)
-    return FactGraph(occurrence_key=record.occurrence_key, nodes=tuple(nodes))
+    result_nodes = tuple(nodes)
+    return FactGraph(
+        occurrence_key=record.occurrence_key,
+        nodes=result_nodes,
+        declared_size=len(result_nodes),
+        digest=_digest(record.occurrence_key, result_nodes),
+    )
 
 
 def restore_fact_fields(graph: FactGraph) -> FieldObject:
     """Independently validate then restore all ordered typed source fields."""
 
     nodes = graph.nodes
+    if type(graph.declared_size) is not int or graph.declared_size != len(nodes):
+        raise FactGraphError("declared source fact node count mismatch")
+    if _digest(graph.occurrence_key, nodes) != graph.digest:
+        raise FactGraphError("source fact digest mismatch: source values or order changed")
     if not nodes:
         raise FactGraphError("missing root fact node")
     if len(graph.occurrence_key) != 2 or not graph.occurrence_key[0]:
