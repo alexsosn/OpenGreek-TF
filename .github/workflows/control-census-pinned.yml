@@ -150,6 +150,7 @@ jobs:
 
           def director(cv):
               passage = cv.node("passage")
+              cv.feature(passage, passage_key="row-1043")
               for run in segment_runs(row.text):
                   slot = cv.slot()
                   cv.feature(slot, form=run.value)
@@ -160,8 +161,15 @@ jobs:
               director,
               slotType="atom",
               generic={"source": "Pinned Open Greek DEL source probe"},
-              otext={"fmt:text-orig-full": "{form}"},
-              featureMeta={"form": {"description": "exact source layout run"}},
+              otext={
+                  "sectionTypes": "passage",
+                  "sectionFeatures": "passage_key",
+                  "fmt:text-orig-full": "{form}",
+              },
+              featureMeta={
+                  "form": {"description": "exact source layout run"},
+                  "passage_key": {"description": "pinned passage identity"},
+              },
               warn=False,
           )
           api = Fabric(locations="control-real-del-tf", silent="deep").load(
