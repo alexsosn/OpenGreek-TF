@@ -8,7 +8,12 @@ exact observed JSONL field set for each family:
 - primary: 1,970,947 rows, 3,909 files, **23 top-level field names**;
 - secondary: 307,085 rows, 533 files, **17 names**;
 - paratext: 15,958 rows, five files, **11 names**;
-- **zero blank lines** across these families.
+- **zero blank lines** across these families; this does not exclude genuinely
+  zero-byte JSONL *files*. The pinned secondary source
+  `data/corpus_secondary/democritus.fragmenta.jsonl` is empty (Git blob
+  `e69de29bb2d1d6434b8b29ae775ad8c2e48c5391`). It is a real witness
+  container contributing zero records, not a malformed record. File census
+  must inspect directory entries independently of record iteration.
 
 The source file and *physical* 1-based row ordinal, not an inferred citation,
 are the minimal deterministic identity. In a secondary file the filename may
