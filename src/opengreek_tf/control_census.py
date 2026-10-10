@@ -15,9 +15,9 @@ from dataclasses import asdict, dataclass
 from itertools import chain
 from pathlib import Path
 
-from .record_stream import FieldArray, FieldObject, FieldValue, ParsedRecord, iter_family
+from .record_stream import Family, FieldArray, FieldObject, FieldValue, ParsedRecord, iter_family
 
-FAMILIES = ("primary", "secondary", "paratext")
+FAMILIES: tuple[Family, ...] = ("primary", "secondary", "paratext")
 
 
 @dataclass(frozen=True, slots=True)
