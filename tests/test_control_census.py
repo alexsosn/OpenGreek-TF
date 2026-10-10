@@ -121,22 +121,32 @@ def test_cli_emits_machine_readable_bounded_evidence(
 def test_text_fabric_13_1_cannot_preserve_raw_cr_in_form(
     tmp_path: Path,
 ) -> None:
-    from tf.convert.walker import CV
-    from tf.fabric import Fabric
+    from tf.convert.walker import CV  # type: ignore[import-untyped]
+    from tf.fabric import Fabric  # type: ignore[import-untyped]
 
     original = "α\rβ"
 
     def director(cv: CV) -> None:
+        passage = cv.node("passage")
+        cv.feature(passage, passage_key="test")
         node = cv.slot()
         cv.feature(node, form=original)
+        cv.terminate(passage)
 
     target = tmp_path / "tf"
     assert CV(Fabric(locations=str(target), silent="deep"), silent="deep").walk(
         director,
         slotType="atom",
         generic={"source": "control characterization"},
-        otext={"fmt:text-orig-full": "{form}"},
-        featureMeta={"form": {"description": "raw codepoints"}},
+        otext={
+            "sectionTypes": "passage",
+            "sectionFeatures": "passage_key",
+            "fmt:text-orig-full": "{form}",
+        },
+        featureMeta={
+            "form": {"description": "raw codepoints"},
+            "passage_key": {"description": "test section id"},
+        },
         warn=False,
     )
     api = Fabric(locations=str(target), silent="deep").load("form", silent="deep")
@@ -181,22 +191,32 @@ def test_c1_range_including_next_line_is_not_silently_ignored(tmp_path: Path) ->
 
 def test_text_fabric_roundtrips_del_found_in_pinned_source(tmp_path: Path) -> None:
     """The pinned control census located DEL in a real primary text row."""
-    from tf.convert.walker import CV
-    from tf.fabric import Fabric
+    from tf.convert.walker import CV  # type: ignore[import-untyped]
+    from tf.fabric import Fabric  # type: ignore[import-untyped]
 
     original = "α\x7fβ"
 
     def director(cv: CV) -> None:
+        passage = cv.node("passage")
+        cv.feature(passage, passage_key="test")
         slot = cv.slot()
         cv.feature(slot, form=original)
+        cv.terminate(passage)
 
     target = tmp_path / "tf"
     assert CV(Fabric(locations=str(target), silent="deep"), silent="deep").walk(
         director,
         slotType="atom",
         generic={"source": "control characterization"},
-        otext={"fmt:text-orig-full": "{form}"},
-        featureMeta={"form": {"description": "raw codepoints"}},
+        otext={
+            "sectionTypes": "passage",
+            "sectionFeatures": "passage_key",
+            "fmt:text-orig-full": "{form}",
+        },
+        featureMeta={
+            "form": {"description": "raw codepoints"},
+            "passage_key": {"description": "test section id"},
+        },
         warn=False,
     )
     api = Fabric(locations=str(target), silent="deep").load("form", silent="deep")
