@@ -30,6 +30,7 @@ def test_walker_removes_unlinked_metadata_entities(tmp_path: Path) -> None:
     assert cv.walk(
         director,
         slotType="word",
+        generic={"source": "synthetic metadata-only TF regression fixture"},
         otext={
             "sectionTypes": "passage",
             "sectionFeatures": "locus",
