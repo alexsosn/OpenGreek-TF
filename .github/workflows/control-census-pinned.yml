@@ -1,0 +1,194 @@
+name: Pinned source control-codepoint census
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/control_census.py"
+      - "tests/test_control_census.py"
+      - "docs/research/tf-control-characters.md"
+      - ".github/workflows/control-census-pinned.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch audited families at exact supported Open Greek commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/
+          /data/corpus_secondary/
+          /data/paratext/
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Scan every audited text row and preserve all control locations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m opengreek_tf.control_census upstream \
+            --locations-output control-locations.jsonl > control-summary.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from opengreek_tf.source import verify_source
+
+          verified = verify_source(Path("upstream"))
+          assert verified.revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          expected = {
+              "primary": (3909, 1_970_947),
+              "secondary": (533, 307_085),
+              "paratext": (5, 15_958),
+          }
+          report = json.loads(Path("control-summary.json").read_text())
+          for family, (expected_files, expected_rows) in expected.items():
+              directory = Path("upstream/data") / {
+                  "primary": "corpus",
+                  "secondary": "corpus_secondary",
+                  "paratext": "paratext",
+              }[family]
+              actual_files = len(list(directory.glob("*.jsonl")))
+              actual_rows = report["records_by_family"].get(family, 0)
+              assert (actual_files, actual_rows) == (expected_files, expected_rows), (
+                  family, actual_files, actual_rows
+              )
+          events = sum(report["occurrences_by_codepoint"].values())
+          assert sum(1 for _ in Path("control-locations.jsonl").open()) == events
+          report["verified_upstream_commit"] = verified.revision
+          report["files_by_family"] = {name: total[0] for name, total in expected.items()}
+          Path("control-summary.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Source control-codepoint census\n\n")
+              summary.write(f"Verified commit: `{verified.revision}`\n\n")
+              summary.write(f"Rows with controls: **{report['affected_rows']}**; "
+                            f"CRLF pairs: **{report['crlf_pairs']}**\n\n")
+              for cp, count in sorted(report["occurrences_by_codepoint"].items()):
+                  summary.write(f"- `{cp}`: {count}\n")
+          PY
+      - name: Independently crosscheck all Unicode controls from raw JSONL
+        shell: python
+        run: |
+          import json
+          import unicodedata
+          from collections import Counter
+          from pathlib import Path
+
+          def strings(value):
+              if isinstance(value, str):
+                  yield value
+              elif isinstance(value, list):
+                  for item in value:
+                      yield from strings(item)
+              elif isinstance(value, dict):
+                  for item in value.values():
+                      yield from strings(item)
+
+          counts = Counter()
+          affected = 0
+          crlf = 0
+          root = Path("upstream/data")
+          for directory in ("corpus", "corpus_secondary", "paratext"):
+              for path in sorted((root / directory).glob("*.jsonl")):
+                  with path.open("rb") as handle:
+                      for line in handle:
+                          row = json.loads(line)
+                          found = False
+                          for value in strings(row):
+                              crlf += value.count("\r\n")
+                              for char in value:
+                                  if unicodedata.category(char) == "Cc" and char not in "\t\n":
+                                      counts[f"U+{ord(char):04X}"] += 1
+                                      found = True
+                          affected += int(found)
+          observed = json.loads(Path("control-summary.json").read_text())
+          assert dict(sorted(counts.items())) == observed["occurrences_by_codepoint"], (
+              "independent raw JSON Unicode-category control counts differ"
+          )
+          assert affected == observed["affected_rows"], "affected-row disagreement"
+          assert crlf == observed["crlf_pairs"], "CRLF disagreement"
+          print("Independent raw-source JSON/Cc scan agrees with typed source census")
+
+      - name: Prove real pinned DEL passage survives native TF load
+        shell: python
+        run: |
+          from itertools import islice
+          from pathlib import Path
+          from tf.convert.walker import CV
+          from tf.fabric import Fabric
+          from opengreek_tf.record_stream import parse_file
+          from opengreek_tf.text_runs import segment_runs
+
+          source_path = (
+              "data/corpus/"
+              "aelius-herodianus-et-pseudo-herodianus.peri-paqw-n.jsonl"
+          )
+          row = next(islice(parse_file(Path("upstream"), source_path), 1042, None))
+          assert row.ordinal == 1043
+          assert row.text.count("\x7f") == 1
+
+          def director(cv):
+              passage = cv.node("passage")
+              cv.feature(passage, passage_key="row-1043")
+              for run in segment_runs(row.text):
+                  slot = cv.slot()
+                  cv.feature(slot, form=run.value)
+              cv.terminate(passage)
+
+          fabric = Fabric(locations="control-real-del-tf", silent="deep")
+          assert CV(fabric, silent="deep").walk(
+              director,
+              slotType="atom",
+              generic={"source": "Pinned Open Greek DEL source probe"},
+              otext={
+                  "sectionTypes": "passage",
+                  "sectionFeatures": "passage_key",
+                  "fmt:text-orig-full": "{form}",
+              },
+              featureMeta={
+                  "form": {"description": "exact source layout run"},
+                  "passage_key": {"description": "pinned passage identity"},
+              },
+              warn=False,
+          )
+          api = Fabric(locations="control-real-del-tf", silent="deep").load(
+              "form", silent="deep"
+          )
+          assert api
+          passage = api.F.otype.s("passage")[0]
+          reconstructed = "".join(
+              api.F.form.v(slot) for slot in api.E.oslots.s(passage)
+          )
+          assert reconstructed == row.text
+          assert api.T.text(passage, fmt="text-orig-full") == row.text
+          print("Pinned DEL row 1043 conserves native TF form and T.text")
+
+      - name: Retain provenance-only evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-control-census
+          path: |
+            control-summary.json
+            control-locations.jsonl
+          retention-days: 14
