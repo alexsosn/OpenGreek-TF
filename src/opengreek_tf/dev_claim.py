@@ -317,9 +317,25 @@ def main(argv: list[str] | None = None) -> int:
                 {"body": f"<!-- opengreek-dev-claim:released #{args.issue} -->"},
             )
             state, prs, comments = api.snapshot(args.issue)
-            result = assess(args.issue, state, prs, comments, datetime.now(UTC))
-            _emit(result)
-            return 0 if result.allowed else 2
+            check_time = datetime.now(UTC)
+            if any(
+                (remaining := _parse_claim(item, args.issue, check_time)) is not None
+                and remaining.token == args.token
+                and remaining.author == releasing_actor
+                for item in comments
+            ):
+                raise ClaimError("GitHub still reports the released lease as active")
+            result = assess(args.issue, state, prs, comments, check_time)
+            print(json.dumps({
+                "released": True,
+                "comment_id": own[0].comment_id,
+                "remaining_preflight": {
+                    "allowed": result.allowed,
+                    "reason": result.reason,
+                    "active_pr_numbers": result.active_pr_numbers,
+                },
+            }, sort_keys=True))
+            return 0
 
         actor = _actor(api) if args.token or args.own_pr is not None else None
         decision = assess(args.issue, state, prs, comments, now,
