@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "src/opengreek_tf/mini_writer.py"
+      - "src/opengreek_tf/validate_probe.py"
+      - "tests/test_validate_probe.py"
+      - "docs/research/independent-mini-validator.md"
       - "tests/test_mini_writer.py"
       - "docs/research/native-micro-writer.md"
       - ".github/workflows/mini-writer-pinned.yml"
@@ -43,6 +46,7 @@ jobs:
           from opengreek_tf.record_stream import parse_file
           from opengreek_tf.mini_writer import write_primary_probe
           from opengreek_tf.source import verify_source
+          from opengreek_tf.validate_probe import validate_primary_probe
 
           root = Path("upstream")
           verify_source(root)
@@ -68,4 +72,6 @@ jobs:
                   if api.F.atom_kind.v(s) == "text"
               ) == original
               assert api.T.text(node, fmt="text-orig-full") == original
-          print("Pinned real-source TF mini graph loads, conserves Unicode text")
+          report = validate_primary_probe(root, path, Path("mini-tf"), record_count=3)
+          assert report.passage_count == 3
+          print("Independent raw-JSONL vs loaded TF verification passed")
