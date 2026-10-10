@@ -48,6 +48,8 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
             passage_key=f"{record.relative_file}:{record.ordinal}",
             source_file=record.relative_file,
             source_ordinal=record.ordinal,
+            fact_count=graph.declared_size,
+            fact_digest=graph.digest,
         )
         for run in segment_runs(record.text):
             atom = cv.slot()
@@ -95,11 +97,14 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
             name: {"description": f"Native source fact {name}"}
             for name in (
                 "atom_kind", "form", "passage_key", "source_file",
-                "source_ordinal", "fact_kind", "fact_id", "fact_position",
+                "source_ordinal", "fact_count", "fact_digest",
+                "fact_kind", "fact_id", "fact_position",
                 "fact_key", "fact_text", "fact_int", "has_fact",
             )
         },
-        intFeatures={"source_ordinal", "fact_id", "fact_position", "fact_int"},
+        intFeatures={
+            "source_ordinal", "fact_count", "fact_id", "fact_position", "fact_int"
+        },
         warn=False,
     )
     if not result:
@@ -110,7 +115,8 @@ def read_fact_probe(destination: str | Path) -> FactGraph:
     """Reconstruct the fact graph from *loaded native TF*, never original rows."""
 
     api = Fabric(locations=str(destination), silent="deep").load(
-        "source_file source_ordinal atom_kind fact_id fact_kind fact_position "
+        "source_file source_ordinal fact_count fact_digest atom_kind "
+        "fact_id fact_kind fact_position "
         "fact_key fact_text fact_int has_fact", silent="deep",
     )
     if not api:
@@ -172,9 +178,15 @@ def read_fact_probe(destination: str | Path) -> FactGraph:
                 value=value,
             )
         )
+    count = api.F.fact_count.v(passage)
+    digest = api.F.fact_digest.v(passage)
+    if type(count) is not int or not isinstance(digest, str):
+        raise FactGraphError("loaded passage lost source fact conservation seal")
     graph = FactGraph(
         occurrence_key=(physical_file, physical_ordinal),
         nodes=tuple(nodes),
+        declared_size=count,
+        digest=digest,
     )
     restore_fact_fields(graph)
     # All nodes are truly associated with this source row, not other texts.
