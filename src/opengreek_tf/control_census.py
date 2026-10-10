@@ -59,8 +59,8 @@ def _string_values(value: FieldValue, path: str) -> Iterator[tuple[str, str]]:
 
 
 def _unsafe_control(codepoint: int) -> bool:
-    """C0 except TAB/LF, plus DEL. CR requires a native TF proof."""
-    return (codepoint < 32 and codepoint not in (9, 10)) or codepoint == 127
+    """Unicode Cc (C0/C1, DEL) except TAB/LF; CR needs a TF proof."""
+    return (codepoint < 32 and codepoint not in (9, 10)) or 127 <= codepoint <= 159
 
 
 def count_controls(
