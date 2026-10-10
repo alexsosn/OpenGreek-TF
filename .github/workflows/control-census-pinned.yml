@@ -1,6 +1,13 @@
 name: Pinned source control-codepoint census
 
 on:
+  # Protected default-branch seed: PR caches are scoped to refs/pull/N/merge.
+  push:
+    branches: [main]
+    paths:
+      - "src/opengreek_tf/ci_source_cache.py"
+      - ".github/workflows/control-census-pinned.yml"
+      - "docs/research/pinned-ci-object-cache.md"
   pull_request:
     paths:
       - "src/opengreek_tf/control_census.py"
@@ -190,7 +197,8 @@ jobs:
       - name: Cache verified immutable Git objects after all checks
         if: >-
           success() && steps.objects.outputs.cache-hit != 'true' &&
-          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'push' ||
+           github.event_name == 'workflow_dispatch' ||
            github.event.pull_request.head.repo.full_name == github.repository)
         uses: actions/cache/save@v4
         with:
