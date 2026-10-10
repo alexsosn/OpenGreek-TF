@@ -280,6 +280,20 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
         raise FactGraphError("native fact probe must contain one passage")
     passage = passages[0]
     nodes = api.F.otype.s("sourceFact")
+    # An independent reader must not trust that CV anchored the declared
+    # facts on a genuine source-row slot rather than a text/phantom token.
+    row_atoms = tuple(
+        s for s in api.F.otype.s("atom")
+        if api.F.atom_kind.v(s) == "source-row"
+    )
+    if len(row_atoms) != 1 or api.F.form.v(row_atoms[0]) is not None:
+        raise FactGraphError("fact graph requires one non-text source-row atom")
+    source_atom = row_atoms[0]
+    if source_atom not in api.E.oslots.s(passage):
+        raise FactGraphError("source row is outside native passage")
+    for handle in nodes:
+        if set(api.E.oslots.s(handle)) != {source_atom}:
+            raise FactGraphError("native source fact is not anchored to source row")
     by_handle: dict[int, int] = {}
     for handle in nodes:
         ident = api.F.fact_id.v(handle)
