@@ -279,7 +279,7 @@ def test_release_succeeds_even_when_own_pr_remains_open(
             self.released = True
             return payload
 
-    fake = FakeAPI("alexsosn/OpenGreek-TF")
+    fake = FakeAPI("alexsosn/OpenGreek-TF", "fake-test-token")
     monkeypatch.setenv("GITHUB_TOKEN", "fake-test-token")
     monkeypatch.setattr(protocol, "GithubAPI", lambda repo, token: fake)
     code = protocol.main(["release", "--issue", "37", "--token", "lease-owner"])
