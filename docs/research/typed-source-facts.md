@@ -63,3 +63,29 @@ on the source passage and validates them again after `Fabric.load`.
 The eventual independent validator (#9) must also compare reconstructed facts
 against raw source, since no self-reported digest prevents malicious
 simultaneous modification of data and commitment.
+
+
+## Native slot / fact cross-check (after independent review)
+
+The initial loaded-TF restorer correctly reconstructed nested `sourceFact`
+nodes but could accept changed `form.tf` text or a forged `passage_key`.
+An adversarial review identified this as a **blocking** conservation gap.
+RED-first corruption tests reproduced both failures: 168 passing tests and
+three failures (including an additional empty-text edge case) on the
+pre-fix implementation.
+
+The bounded reader now requires:
+
+- The passage identity key to equal its physical `source_file:source_ordinal`.
+- Every native `atom` to belong to the sole passage, whose last slot is its
+  authentic source-row atom; preceding slots must be typed text atoms.
+- Joined nonempty `form` values and `T.text(..., fmt="text-orig-full")`
+  to equal the exact `text` field reconstructed from the nested source facts.
+- The source-row atom to contain no text for nonempty sources. For an
+  **empty-text one-row corpus**, TF 13.1 requires a declared `form` feature
+  for its text format; the authentic source-row slot therefore carries an
+  explicit empty form `""` instead of inventing a lexical text atom.
+
+The source-graph digest and this slot comparison protect different layers.
+Neither is an independent *whole-corpus* proof against source JSONL; that
+remains part of issue #9.
