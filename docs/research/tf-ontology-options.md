@@ -80,8 +80,12 @@ labels must not pretend the heterogeneous source citation schemes share a
 book/chapter/verse hierarchy.
 
 Candidate browser navigation: work / source-text layer / stable passage ordinal,
-with original locus displayed as a separate label. Freeze exact
-`sectionTypes/sectionFeatures` only after #18's collision classification.
+with original locus displayed as a separate label. #18/PR #19 classified the repeated-locus source cases. The subsequent
+#27/PR #28 native TF micro-writer proves `work_slug/passage_key` section
+features on bounded real/synthetic records, where `passage_key` derives from
+source file + physical ordinal; original `locus` remains metadata. This is
+still a provisional researcher-navigation policy pending complete
+secondary/witness/paratext and browser tests.
 
 ## D-03: Shared entities and metadata-only nodes (OPEN; #20)
 
@@ -94,9 +98,13 @@ Text-Fabric's data model permits nodes not linked to slots, yet the standard
 nodes are removed during validation. Do not assume `cv.node('author')` with no
 slots preserves a metadata-only entity.
 
-#20 must prove, using TF 13.1.x and a loaded dataset, how to represent these
-natively without synthetic textual slots. Writer (#6) cannot rely on untested
-metadata node survival.
+The #20/PR #22 TF 13.1 proof has since shown that CV drops genuinely
+unlinked author nodes, and that direct Fabric.save with empty oslots does not
+load as a valid dataset. A distinct source-record `atom` slot can anchor
+an actual unserved/retired identity without creating a Greek text word,
+and the loaded dataset preserves such author nodes. This is a tested
+**candidate**, not approval to use text slots as a proxy for metadata,
+nor a final production ontology; see `docs/research/tf-metadata-only-nodes.md`.
 
 Regardless of writer mechanism, model current identities, former slugs,
 status/tombstones, author-to-work, work-to-expression, edition/source authority,
@@ -145,10 +153,36 @@ counts. The independent validator (#9) rereads pinned upstream bytes and the
 multiplicity, relation targets, alternative readings, language and correction
 metadata. Intentional corruption fixtures must prove failure.
 
+## Updated executable evidence (2026-10-10; no ontology freeze)
+
+- #23/PR #24 provides a strict, typed, streaming parser for audited primary,
+  secondary and paratext JSONL sources, including ordered nested values.
+  It is *not* a complete typed IR for all 31 metadata inventories.
+- #25/PR #26 establishes exact Unicode whitespace/non-whitespace layout runs
+  (codepoint offsets). These runs are not licensed as lexical Greek words.
+- #27/PR #28 provides a loadable bounded native TF **source-record atom +
+  text-run atom** graph, preserving duplicate loci, empty text, original Unicode
+  and supported scalar source fields; it fails closed on nested metadata,
+  unsupported layers and raw CR. No production schema is selected yet.
+- #29/PR #32 independently scanned **2,293,990** pinned source records and
+  found **52 affected source rows / 93 control-character field occurrences**
+  (2 DEL and 91 C1, zero CR/CRLF). The 14 distinct observed DEL/C1 codepoints
+  passed synthetic `CV.walk`/`Fabric.load`/`T.text` round trips, and the
+  pinned real DEL-bearing row was loaded and reconstructed exactly. A CR
+  remains unsafe in TF 13.1's tested native string path, so the writer rejects
+  it before output. This does **not** establish advanced-browser rendering
+  or the future-release contract.
+- #20/PR #22's source-record atom candidate preserves registry-only identities
+  in a loaded dataset. Whether this is sustainable at full-corpus scale,
+  whether word queries remain ergonomic, and advanced app behavior remain open.
+
+The source-level proofs above narrow the design search; they do not prove
+complete native TF semantics or settle the public slot/section contract.
+
 ## Decision checklist for the schema-freeze PR
 
-- [ ] #18: repeated-locus source evidence and display policy grounded in data
-- [ ] #20: metadata-only entity survival proven through Fabric.load()
+- [x] #18: repeated-locus source evidence and *candidate* display policy grounded in data
+- [x] #20: native source-atom metadata-only candidate survives Fabric.load()
 - [ ] selected slot unit proven lossless on source and edge-case fixtures
 - [ ] all 31 metadata inventories mapped or explicitly classified derived/provenance
 - [ ] every in-scope semantic source construct has native graph representation
