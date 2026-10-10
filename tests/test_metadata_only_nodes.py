@@ -81,6 +81,8 @@ def test_native_tf_save_load_rejects_empty_oslots_edges(
             "written_by": {5: {3}},
         },
         metaData={
+            "otype": {"valueType": "str"},
+            "oslots": {"valueType": "int"},
             "otext": {
                 "sectionTypes": "passage",
                 "sectionFeatures": "locus",
