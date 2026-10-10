@@ -250,6 +250,22 @@ def write_native_fact_probe(record: ParsedRecord, destination: str | Path) -> No
             cv.edge(parent, handles[fact.id], has_fact=None)
         cv.terminate(passage)
 
+    # TF 13.1 rejects featureMeta/intFeatures entries for features absent
+    # from *this* graph. Derive the declarations from actual native values.
+    used = {
+        "atom_kind", "source_family", "source_file", "source_ordinal",
+        "passage_key", "fact_id", "fact_kind", "fact_position", "has_fact",
+    }
+    if record.text:
+        used.add("form")
+    for fact in graph.nodes:
+        if fact.key is not None:
+            used.add("fact_key")
+        if fact.index is not None:
+            used.add("fact_index")
+        if fact.kind in ("str", "int", "bool"):
+            used.add(f"fact_{fact.kind}")
+
     cv = CV(Fabric(locations=str(target), silent="deep"), silent="deep")
     success = cv.walk(
         director,
@@ -260,8 +276,8 @@ def write_native_fact_probe(record: ParsedRecord, destination: str | Path) -> No
             "fmt:text-orig-full": "{form}",
         },
         featureMeta={n: {"description": f"Native source fact graph {n}"}
-                     for n in _ALL_FEATURES.split()},
-        intFeatures=_INT_FEATURES,
+                     for n in sorted(used)},
+        intFeatures=_INT_FEATURES & used,
         warn=False,
     )
     if not success:
