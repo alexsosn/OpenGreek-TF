@@ -93,4 +93,29 @@ Questions include:
 
 Behavior-changing review fixes require a new RED/GREEN cycle and re-review of the new exact head.
 
+Before merging, run the read-only exact-head premerge evidence gate using
+**all** workflows required for the PR (not only the generic CI workflow).
+For example, on a PR with a pinned source-control census:
+
+```bash
+GITHUB_TOKEN=... python -m opengreek_tf.dev_gate \
+  --issue 37 --pr 42 --token YOUR_TOKEN \
+  --require-workflow CI \
+  --require-workflow "Pinned source control-codepoint census"
+```
+
+A successful gate requires a non-draft, mergeable PR, unchanged current
+`main` base, exact-head completed-success workflow runs linked to this PR
+and its live base, and a substantive GitHub review on the current head.
+No trusted review may have unresolved `CHANGES_REQUESTED` on that head.
+Required workflow names must be supplied explicitly because Actions
+path filters cannot be inferred by a read-only GitHub check.
+
+The tool **does not perform the merge** and cannot prove that a review is
+genuinely independent. Review content must be examined critically by a
+logically separate pass. GitHub REST reads are not transactional: recheck
+live state and use the provider's `expected_head_sha` when actually
+merging; do not interpret the tool as a distributed lock. See
+`docs/research/premerge-gate.md`.
+
 Merge only when the exact head is green and reviewed.
