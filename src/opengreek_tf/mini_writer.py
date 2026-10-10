@@ -41,6 +41,7 @@ def write_primary_probe(
     accepted: list[tuple[ParsedRecord, dict[str, str | int]]] = []
     work_urn: str | None = None
     source_file: str | None = None
+    previous_ordinal = 0
     for record in records:
         if len(accepted) >= max_records:
             raise UnsupportedSourceStructure(
@@ -53,6 +54,11 @@ def write_primary_probe(
         if source_file is not None and source_file != record.relative_file:
             raise UnsupportedSourceStructure("mixed source files in one TF work probe")
         source_file = record.relative_file
+        if record.ordinal <= previous_ordinal:
+            raise UnsupportedSourceStructure(
+                f"{record.occurrence_key}: non-increasing physical source order"
+            )
+        previous_ordinal = record.ordinal
 
         values: dict[str, str | int] = {}
         for field_name, value in record.fields.items:
