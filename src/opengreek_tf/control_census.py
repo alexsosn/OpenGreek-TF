@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import asdict, dataclass
 from itertools import chain
 from pathlib import Path
@@ -64,7 +64,7 @@ def _unsafe_control(codepoint: int) -> bool:
 
 
 def count_controls(
-    records: Iterable[ParsedRecord], *, sample_limit: int = 20
+    records: Iterable[ParsedRecord], *, sample_limit: int = 20,\n    on_occurrence: Callable[[ControlLocation], None] | None = None
 ) -> ControlCensus:
     """Count controls in every nested string, preserving source/field offsets.
 
@@ -96,17 +96,19 @@ def count_controls(
                     occurrences[codepoint] += 1
                     if character == "\r" and source_text[offset + 1:offset + 2] == "\n":
                         crlf_pairs += 1
-                    if len(samples) < sample_limit:
-                        samples.append(
-                            ControlLocation(
-                                family=record.family,
-                                relative_file=record.relative_file,
-                                ordinal=record.ordinal,
-                                field_path=field_path,
-                                offset=offset,
-                                codepoint=codepoint,
-                            )
+                    if len(samples) < sample_limit or on_occurrence is not None:
+                        location = ControlLocation(
+                            family=record.family,
+                            relative_file=record.relative_file,
+                            ordinal=record.ordinal,
+                            field_path=field_path,
+                            offset=offset,
+                            codepoint=codepoint,
                         )
+                        if len(samples) < sample_limit:
+                            samples.append(location)
+                        if on_occurrence is not None:
+                            on_occurrence(location)
         if affected:
             affected_rows += 1
 
@@ -123,10 +125,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Scan a *local* pinned checkout; acquisition/verification is external."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="already acquired source checkout")
-    parser.add_argument("--sample-limit", type=int, default=20)
+    parser.add_argument("--sample-limit", type=int, default=20)\n    parser.add_argument(\n        "--locations-output", type=Path,\n        help="optional streamed JSONL of every control location",\n    )
     args = parser.parse_args(argv)
     rows = chain.from_iterable(iter_family(args.source, family) for family in FAMILIES)
-    result = count_controls(rows, sample_limit=args.sample_limit)
+    if args.locations_output is not None:
+        with args.locations_output.open("w", encoding="utf-8") as output:
+            def record_location(location: ControlLocation) -> None:
+                output.write(json.dumps(asdict(location), sort_keys=True) + "\\n")
+
+            result = count_controls(\n                rows, sample_limit=args.sample_limit, on_occurrence=record_location\n            )
+    else:
+        result = count_controls(rows, sample_limit=args.sample_limit)
     print(json.dumps(result.as_report(), ensure_ascii=False, sort_keys=True))
     return 0
 
