@@ -176,3 +176,27 @@ def test_graph_detects_valid_permutation_of_original_object_order(
     changed[2] = replace(second, position=first.position)
     with pytest.raises(FactGraphError, match="digest"):
         restore_fact_fields(replace(graph, nodes=tuple(changed)))
+
+
+def test_native_probe_does_not_declare_absent_numeric_features(
+    tmp_path: Path,
+) -> None:
+    # TF CV.walk refuses feature metadata for absent node features: a genuine
+    # all-string source record must not get a fabricated integer-valued fact.
+    fields = FieldObject(
+        (("urn", "a"), ("edition", "grc"), ("text", "λόγος"))
+    )
+    record = _row(fields)
+    dest = tmp_path / "native"
+    write_fact_probe(record, dest)
+    assert restore_fact_fields(read_fact_probe(dest)) == fields
+
+
+def test_native_probe_retains_empty_array_with_no_scalar_items(
+    tmp_path: Path,
+) -> None:
+    fields = FieldObject((("text", "α"), ("corrections", FieldArray(()))))
+    record = _row(fields)
+    dest = tmp_path / "native"
+    write_fact_probe(record, dest)
+    assert restore_fact_fields(read_fact_probe(dest)) == fields
