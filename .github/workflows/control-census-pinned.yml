@@ -202,7 +202,7 @@ jobs:
           row = next(islice(parse_file(Path("upstream"), source), 1042, None))
           assert row.ordinal == 1043
           assert isinstance(row.fields.get("text_lines"), FieldArray)
-          assert "\\x7f" in row.text
+          assert "\x7f" in row.text
           expected = build_fact_graph(row)
           assert decode_fact_graph(expected) == row.fields
 
