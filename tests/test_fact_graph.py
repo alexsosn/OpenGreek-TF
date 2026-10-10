@@ -155,3 +155,18 @@ def test_native_tf_never_overwrites_existing_source_material(
     path.mkdir()
     with pytest.raises(FactGraphError, match="exist"):
         write_native_fact_probe(row, path)
+
+
+def test_native_tf_handles_absent_optional_int_bool_and_array_features(
+    tmp_path: Path,
+) -> None:
+    """Real pinned row #1043 has no ints/bools; TF refuses unused metadata."""
+    row = _record(tmp_path, "primary", _base("λόγος"))
+    destination = tmp_path / "str-only-tf"
+    write_native_fact_probe(row, destination)
+    assert decode_fact_graph(read_native_fact_graph(destination)) == row.fields
+    api = Fabric(locations=str(destination), silent="deep").load(
+        "form fact_kind", silent="deep"
+    )
+    assert api
+    assert api.T.text(api.F.otype.s("passage")[0], fmt="text-orig-full") == row.text
