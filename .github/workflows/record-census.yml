@@ -52,14 +52,24 @@ jobs:
               "paratext": (5, 15_958),
           }
           for family, (expected_files, expected_rows) in expected.items():
-              file_names = set()
+              directory = root / "data" / {
+                  "primary": "corpus",
+                  "secondary": "corpus_secondary",
+                  "paratext": "paratext",
+              }[family]
+              # A zero-byte secondary witness file is present in the pinned
+              # source. Counting filenames via yielded rows silently drops it.
+              files = sorted(directory.glob("*.jsonl"))
+              empty_files = [p.name for p in files if p.stat().st_size == 0]
               row_count = 0
               for row in iter_family(root, family):
-                  file_names.add(row.relative_file)
                   row_count += 1
                   assert row.ordinal > 0
                   assert row.text is not None
-              assert (len(file_names), row_count) == (expected_files, expected_rows), (
-                  family, len(file_names), row_count
+              assert (len(files), row_count) == (expected_files, expected_rows), (
+                  family, len(files), row_count, empty_files
               )
-              print(f"{family}: {len(file_names)} files; {row_count} validated rows")
+              print(
+                  f"{family}: {len(files)} files; {row_count} validated rows; "
+                  f"empty containers={empty_files}"
+              )
