@@ -150,3 +150,29 @@ def test_native_probe_rejects_existing_destination_before_output(
     dest.mkdir()
     with pytest.raises(FactGraphError, match="exists"):
         write_fact_probe(record, dest)
+
+
+def test_graph_declares_count_and_source_value_digest(
+    representative: FieldObject,
+) -> None:
+    graph = build_fact_graph(_row(representative))
+    assert graph.declared_size == len(graph.nodes)
+    assert len(graph.digest) == 64
+    changed = list(graph.nodes)
+    index = next(n.node_id for n in changed if n.kind == "str" and n.value == "2.1")
+    changed[index] = replace(changed[index], value="2.2")
+    with pytest.raises(FactGraphError, match="digest"):
+        restore_fact_fields(replace(graph, nodes=tuple(changed)))
+
+
+def test_graph_detects_valid_permutation_of_original_object_order(
+    representative: FieldObject,
+) -> None:
+    graph = build_fact_graph(_row(representative))
+    changed = list(graph.nodes)
+    first, second = changed[1], changed[2]
+    assert first.parent_id == second.parent_id
+    changed[1] = replace(first, position=second.position)
+    changed[2] = replace(second, position=first.position)
+    with pytest.raises(FactGraphError, match="digest"):
+        restore_fact_fields(replace(graph, nodes=tuple(changed)))
