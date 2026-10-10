@@ -160,3 +160,14 @@ def test_writer_rejects_unroundtrippable_carriage_return(
     with pytest.raises(UnsupportedSourceStructure, match="carriage return"):
         write_primary_probe(records, dest)
     assert not dest.exists()
+
+
+@pytest.mark.parametrize("order", [(0, 0), (1, 0)])
+def test_writer_rejects_duplicate_or_reordered_physical_source_rows(
+    tmp_path: Path, order: tuple[int, int]
+) -> None:
+    source_rows = _source(tmp_path, [_row("πρῶτον"), _row("δεύτερον")])
+    destination = tmp_path / "tf"
+    with pytest.raises(UnsupportedSourceStructure, match="physical source order"):
+        write_primary_probe([source_rows[i] for i in order], destination)
+    assert not destination.exists()
