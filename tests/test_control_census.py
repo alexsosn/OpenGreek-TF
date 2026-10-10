@@ -191,8 +191,8 @@ def test_c1_range_including_next_line_is_not_silently_ignored(tmp_path: Path) ->
 
 def test_text_fabric_roundtrips_del_found_in_pinned_source(tmp_path: Path) -> None:
     """The pinned control census located DEL in a real primary text row."""
-    from tf.convert.walker import CV  # type: ignore[import-untyped]
-    from tf.fabric import Fabric  # type: ignore[import-untyped]
+    from tf.convert.walker import CV
+    from tf.fabric import Fabric
 
     original = "α\x7fβ"
 
