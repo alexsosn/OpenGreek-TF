@@ -55,7 +55,12 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
             atom = cv.slot()
             cv.feature(atom, atom_kind="text", form=run.value)
         source_atom = cv.slot()
-        cv.feature(source_atom, atom_kind="source-row")
+        # Preserve an empty source text on the genuine row atom, not a
+        # fabricated linguistic word; TF requires a populated text feature.
+        if record.text:
+            cv.feature(source_atom, atom_kind="source-row")
+        else:
+            cv.feature(source_atom, atom_kind="source-row", form="")
 
         handles: dict[int, Any] = {}
         for fact in graph.nodes:
@@ -97,8 +102,7 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
         available.add("fact_text")
     if any(fact.kind in {"int", "bool"} for fact in graph.nodes):
         available.add("fact_int")
-    if record.text:
-        available.add("form")
+    available.add("form")
     integer_features = {"source_ordinal", "fact_count", "fact_id", "fact_position"}
     if "fact_int" in available:
         integer_features.add("fact_int")
@@ -111,9 +115,7 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
         otext={
             "sectionTypes": "passage",
             "sectionFeatures": "passage_key",
-            # A one-record empty-text proof has no text atoms or form feature.
-            # TF rejects a format referencing a nonexistent node feature.
-            **({"fmt:text-orig-full": "{form}"} if record.text else {}),
+            "fmt:text-orig-full": "{form}",
         },
         featureMeta={
             name: {"description": f"Native source fact {name}"}
@@ -232,8 +234,9 @@ def read_fact_probe(destination: str | Path) -> FactGraph:
     if len(row_atoms) != 1 or passage_slots[-1] not in row_atoms:
         raise FactGraphError("source passage must end with one authentic row atom")
     source_row_atom = passage_slots[-1]
-    if "form" in declared and api.F.form.v(source_row_atom) is not None:
-        raise FactGraphError("source row atom must have no text form")
+    source_row_form = api.F.form.v(source_row_atom) if "form" in declared else None
+    if source_row_form not in (None, "") or (expected_text and source_row_form is not None):
+        raise FactGraphError("source row atom has unexpected nonempty text form")
 
     runs: list[str] = []
     for slot in passage_slots[:-1]:
@@ -245,7 +248,7 @@ def read_fact_probe(destination: str | Path) -> FactGraph:
         runs.append(value)
     if "".join(runs) != expected_text:
         raise FactGraphError("loaded native text atoms disagree with source facts")
-    if expected_text and api.T.text(passage, fmt="text-orig-full") != expected_text:
+    if api.T.text(passage, fmt="text-orig-full") != expected_text:
         raise FactGraphError("TF formatted text disagrees with source facts")
 
     for handle in fact_handles:
