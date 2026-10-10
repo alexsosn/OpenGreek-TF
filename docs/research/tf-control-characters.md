@@ -87,12 +87,34 @@ verified the immutable release and all 3,909 + 533 + 5 files /
   single passage, not evidence of two independent primary text passages.
 - All other C0 controls except TAB/LF: 0. One affected source row.
 
-That early successful run predates expansion of the scanner to the complete
-C1 range U+0080–U+009F. The exact-head C1-inclusive run is a distinct
-acceptance gate; the counts above must not be extrapolated to C1.
+A later [C1-inclusive pinned run 38060929665](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38060929665)
+repeated the complete 2,293,990-row census and independently reread all
+source JSONL via a separate Unicode-category `Cc` implementation. Both
+scanners agreed: **52 distinct affected records; 93 field occurrences**;
+**0 CR/CRLF**; **2 DEL** and **91 C1 occurrences**. The observed C1
+codepoints and field-occurrence counts were:
 
-The observed DEL has its own RED-first TF `form` / `T.text` round-trip
-test. A pass for DEL would not establish CR or browser compatibility.
+| Codepoint | Count | Codepoint | Count |
+|---|---:|---|---:|
+| U+0081 | 3 | U+0086 | 2 |
+| U+0088 | 2 | U+008C | 3 |
+| U+008D | 20 | U+008E | 5 |
+| U+008F | 4 | U+0090 | 4 |
+| U+0098 | 12 | U+009A | 17 |
+| U+009C | 4 | U+009D | 11 |
+| U+009E | 4 | | |
+
+The C1-inclusive run's own *overall conclusion was failure*, because the
+real DEL Text-Fabric proof fixture had omitted mandatory TF section metadata.
+Its raw-source census and independent cross-check steps **did pass**. It
+cannot count as an exact-head green release gate. Subsequent corrections
+give TF fixtures genuine passage section nodes/features and require
+`F.form` and `T.text` identity on the DEL passage, alongside synthetic
+round-trip probes for every observed distinct C1/DEL codepoint.
+
+The two DEL field occurrences remain a single physical source row, and the
+reported C1 counts are *field occurrences* rather than unique textual glyphs:
+nested `text_lines` may repeat a character already present in `text`.
 
 ## Open decisions
 
