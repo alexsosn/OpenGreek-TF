@@ -8,6 +8,7 @@ arrays remain inspectable typed values, never serialized feature blobs.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypeAlias
@@ -242,7 +243,7 @@ def _family_for(relative_file: str) -> Family:
     return DIR_FAMILY[parts[1]]
 
 
-def parse_file(root: Path, relative_file: str):
+def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
     """Lazily parse exactly one audited-family JSONL file.
 
     Yields one record at a time, keeps original field order, and identifies a
@@ -294,7 +295,7 @@ def parse_file(root: Path, relative_file: str):
         raise RecordParseError(f"cannot read {relative_file}: {exc}") from exc
 
 
-def iter_family(root: Path, family: Family):
+def iter_family(root: Path, family: Family) -> Iterator[ParsedRecord]:
     """Yield all source rows in deterministic filename/physical-row order."""
     directory = Path(root) / "data" / FAMILY_DIR[family]
     if not directory.is_dir():
