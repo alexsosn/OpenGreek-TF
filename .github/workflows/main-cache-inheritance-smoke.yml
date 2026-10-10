@@ -1,0 +1,81 @@
+name: Protected-main Git-object cache inheritance smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/main-cache-inheritance-smoke.yml"
+      - "tests/test_ci_cache_inheritance_smoke.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prove-main-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+
+      - name: Prepare independent Git metadata with exact pinned sparse source
+        id: scope
+        run: python -m opengreek_tf.ci_source_cache prepare upstream
+
+      - name: Restore immutable object cache inherited from protected main
+        id: objects
+        uses: actions/cache/restore@v4
+        with:
+          path: upstream/.git/objects
+          key: ${{ steps.scope.outputs.key }}
+
+      - name: Require actual exact-key hit in this different pull request
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.objects.outputs.cache-hit }}" != 'true' ]]; then
+            echo "::error::The protected main Git-object cache was not inherited by this pull request"
+            exit 1
+          fi
+          echo "Exact-key protected-main cache restore confirmed"
+
+      - name: Reverify pinned source identity, clean tree and all family inventories
+        shell: bash
+        env:
+          SOURCE_CACHE_HIT: ${{ steps.objects.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          python -m opengreek_tf.ci_source_cache checkout upstream \
+            --cache-hit "$SOURCE_CACHE_HIT"
+
+      - name: Independently inspect real source bytes and parsed Greek row
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          from opengreek_tf.record_stream import parse_file
+          from opengreek_tf.source import verify_source
+
+          root = Path("upstream")
+          identity = verify_source(root)
+          assert identity.revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          path = "data/corpus/heraclides-ponticus.fragmenta.jsonl"
+          raw = (root / path).read_bytes()
+          assert raw.startswith(b"{") and b"\n" in raw
+          first = json.loads(raw.splitlines()[0])
+          parsed = next(parse_file(root, path))
+          assert parsed.ordinal == 1
+          assert first["text"] == parsed.text
+          assert parsed.text
+          print(
+              "Protected main cache yielded exact verified source bytes "
+              "and the same parsed real Greek row"
+          )
