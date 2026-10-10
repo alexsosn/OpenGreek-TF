@@ -57,7 +57,7 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
 
         handles: dict[int, Any] = {}
         for fact in graph.nodes:
-            handle = cv.node("sourceFact", slots=[source_atom])
+            handle = cv.node("sourceFact", slots=[source_atom[1]])
             handles[fact.node_id] = handle
             typed: dict[str, str | int] = {
                 "fact_kind": fact.kind,
