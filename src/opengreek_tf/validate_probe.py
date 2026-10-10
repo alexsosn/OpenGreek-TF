@@ -194,7 +194,7 @@ def validate_primary_probe(
             all(kind in {"source-row", "text"} for kind in kinds),
             f"{ctx}: unrecognized native atom kind",
         )
-        text_parts = [features["form"].v(slot) for slot, kind in zip(slots, kinds)
+        text_parts = [features["form"].v(slot) for slot, kind in zip(slots, kinds, strict=True)
                       if kind == "text"]
         _check(
             all(isinstance(part, str) and bool(part) for part in text_parts),
