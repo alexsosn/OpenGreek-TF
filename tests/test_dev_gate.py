@@ -181,6 +181,8 @@ def test_review_of_previous_head_and_changes_requested_block() -> None:
 def test_closed_draft_conflicted_or_unrelated_pr_cannot_pass(patch: dict[str, Any]) -> None:
     pr = _pr()
     pr.update(patch)
+    if "title" in patch:
+        pr["head"]["ref"] = "dev/20-unrelated"
     with pytest.raises(MergeGateError):
         _gate(pr=pr)
 
