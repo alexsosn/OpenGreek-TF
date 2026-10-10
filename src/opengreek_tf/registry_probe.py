@@ -185,7 +185,7 @@ def write_registry_probe(
                 cv.terminate(alias)
 
     output = Fabric(locations=str(destination), silent="deep")
-    converter = CV(output, silent="deep")
+    converter = CV(output, silent="auto")
     integer_features = {"source_ordinal"}
     if aliases_present:
         integer_features.add("alias_position")
