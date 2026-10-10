@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, cast
 
 from tf.convert.walker import CV  # type: ignore[import-untyped]
 from tf.fabric import Fabric  # type: ignore[import-untyped]
@@ -347,9 +347,10 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
 
     result: list[FactNode] = []
     for handle, ident in by_handle.items():
-        kind = value("fact_kind", handle)
-        if kind not in ("object", "array", "str", "int", "bool"):
+        kind_raw = value("fact_kind", handle)
+        if kind_raw not in ("object", "array", "str", "int", "bool"):
             raise FactGraphError("unknown native fact kind")
+        kind = cast(FactKind, kind_raw)
         present = [("str", value("fact_str", handle)),
                    ("int", value("fact_int", handle)),
                    ("bool", value("fact_bool", handle))]
@@ -374,18 +375,34 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
                 if type(scalar) is not str:
                     raise FactGraphError("native string was converted")
                 value = scalar
+        pos = value("fact_position", handle)
+        key = value("fact_key", handle)
+        index = value("fact_index", handle)
+        if type(pos) is not int:
+            raise FactGraphError("invalid native fact position")
+        if key is not None and type(key) is not str:
+            raise FactGraphError("invalid native fact key")
+        if index is not None and type(index) is not int:
+            raise FactGraphError("invalid native fact array index")
         result.append(
             FactNode(
-                id=ident, parent_id=parent.get(handle),
-                position=value("fact_position", handle),
-                key=value("fact_key", handle), index=value("fact_index", handle),
+                id=cast(int, ident), parent_id=parent.get(handle),
+                position=cast(int, pos),
+                key=cast(str | None, key), index=cast(int | None, index),
                 kind=kind, value=value,
             )
         )
+    family = value("source_family", passage)
+    relative_file = value("source_file", passage)
+    ordinal = value("source_ordinal", passage)
+    if family not in ("primary", "secondary", "paratext"):
+        raise FactGraphError("invalid native source family")
+    if type(relative_file) is not str or type(ordinal) is not int:
+        raise FactGraphError("invalid native source occurrence")
     graph = FactGraph(
-        family=value("source_family", passage),
-        relative_file=value("source_file", passage),
-        ordinal=value("source_ordinal", passage),
+        family=cast(Family, family),
+        relative_file=cast(str, relative_file),
+        ordinal=cast(int, ordinal),
         nodes=tuple(result),
     )
     decode_fact_graph(graph)
