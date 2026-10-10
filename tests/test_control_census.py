@@ -204,3 +204,26 @@ def test_text_fabric_roundtrips_del_found_in_pinned_source(tmp_path: Path) -> No
     slot = api.F.otype.s("atom")[0]
     assert api.F.form.v(slot) == original
     assert api.T.text(slot, fmt="text-orig-full") == original
+
+
+@pytest.mark.parametrize("target_kind", ["source-file", "new-file-in-source", "existing-output"])
+def test_cli_refuses_destructive_or_source_internal_location_output(
+    tmp_path: Path, target_kind: str,
+) -> None:
+    _fixture(tmp_path)
+    existing_source = tmp_path / "data" / "corpus" / "work.jsonl"
+    original = existing_source.read_bytes()
+    if target_kind == "source-file":
+        target = existing_source
+    elif target_kind == "new-file-in-source":
+        target = tmp_path / "unexpected-diagnostic.jsonl"
+    else:
+        target = tmp_path.parent / f"{tmp_path.name}-existing.jsonl"
+        target.write_text("DO NOT CLOBBER", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main([str(tmp_path), "--locations-output", str(target)])
+    assert existing_source.read_bytes() == original
+    if target_kind == "new-file-in-source":
+        assert not target.exists()
+    if target_kind == "existing-output":
+        assert target.read_text(encoding="utf-8") == "DO NOT CLOBBER"
