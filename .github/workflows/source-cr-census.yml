@@ -11,6 +11,10 @@ on:
       - ".github/workflows/source-cr-census.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   source-cr-audit:
     runs-on: ubuntu-latest

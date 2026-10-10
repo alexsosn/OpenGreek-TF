@@ -22,6 +22,7 @@ def test_shared_text_family_consumers_use_exact_same_object_cache_key() -> None:
         workflow = (WORKFLOWS / name).read_text(encoding="utf-8")
         assert "opengreek_tf.ci_source_cache prepare upstream" in workflow, name
         assert "actions/cache/restore@v4" in workflow, name
+        assert "cancel-in-progress: true" in workflow, name
         assert "key: ${{ steps.scope.outputs.key }}" in workflow, name
         assert "opengreek_tf.ci_source_cache checkout upstream" in workflow, name
         assert "actions/cache/save@v4" not in workflow, (
