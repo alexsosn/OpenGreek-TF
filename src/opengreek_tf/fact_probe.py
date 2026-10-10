@@ -73,7 +73,7 @@ def write_fact_probe(record: ParsedRecord, destination: str | Path) -> None:
                     raise FactGraphError("string source fact has no string value")
                 typed["fact_text"] = fact.value
             elif fact.kind in {"int", "bool"}:
-                if type(fact.value) not in (int, bool):
+                if not isinstance(fact.value, (int, bool)):
                     raise FactGraphError("numeric source fact has no typed value")
                 typed["fact_int"] = int(fact.value)
             cv.feature(handle, **typed)
