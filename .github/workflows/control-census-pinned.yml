@@ -1,9 +1,19 @@
 name: Pinned source control-codepoint census
 
 on:
+  # Protected default-branch seed: PR caches are scoped to refs/pull/N/merge.
+  push:
+    branches: [main]
+    paths:
+      - "src/opengreek_tf/ci_source_cache.py"
+      - ".github/workflows/control-census-pinned.yml"
+      - "docs/research/pinned-ci-object-cache.md"
   pull_request:
     paths:
       - "src/opengreek_tf/control_census.py"
+      - "src/opengreek_tf/ci_source_cache.py"
+      - "tests/test_ci_source_cache.py"
+      - "docs/research/pinned-ci-object-cache.md"
       - "tests/test_control_census.py"
       - "docs/research/tf-control-characters.md"
       - ".github/workflows/control-census-pinned.yml"
@@ -23,23 +33,23 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e .
-      - name: Fetch audited families at exact supported Open Greek commit
+      - name: Prepare fresh pinned source Git metadata and sparse scope
+        id: scope
+        run: python -m opengreek_tf.ci_source_cache prepare upstream
+      - name: Restore content-addressed pinned source objects only
+        id: objects
+        uses: actions/cache/restore@v4
+        with:
+          path: upstream/.git/objects
+          key: ${{ steps.scope.outputs.key }}
+      - name: Restore or fetch and independently verify pinned text families
         shell: bash
+        env:
+          SOURCE_CACHE_HIT: ${{ steps.objects.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          mkdir upstream
-          git -C upstream init --quiet
-          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
-          git -C upstream sparse-checkout init --no-cone
-          cat > upstream/.git/info/sparse-checkout <<'EOF'
-          /data/corpus_release.json
-          /data/corpus/
-          /data/corpus_secondary/
-          /data/paratext/
-          EOF
-          git -C upstream fetch --depth 1 --filter=blob:none origin \
-            338aa27310b3cfe2588a993b4d113b503597d70f
-          git -C upstream checkout --detach FETCH_HEAD
+          python -m opengreek_tf.ci_source_cache checkout upstream \
+            --cache-hit "$SOURCE_CACHE_HIT"
       - name: Scan every audited text row and preserve all control locations
         shell: bash
         run: |
@@ -184,6 +194,16 @@ jobs:
           assert api.T.text(passage, fmt="text-orig-full") == row.text
           print("Pinned DEL row 1043 conserves native TF form and T.text")
 
+      - name: Cache verified immutable Git objects after all checks
+        if: >-
+          success() && steps.objects.outputs.cache-hit != 'true' &&
+          (github.event_name == 'push' ||
+           github.event_name == 'workflow_dispatch' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        uses: actions/cache/save@v4
+        with:
+          path: upstream/.git/objects
+          key: ${{ steps.scope.outputs.key }}
       - name: Retain provenance-only evidence
         uses: actions/upload-artifact@v4
         with:
