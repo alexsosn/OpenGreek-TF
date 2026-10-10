@@ -1,0 +1,87 @@
+name: Pinned native nested source-fact proof
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/fact_graph.py"
+      - "src/opengreek_tf/fact_probe.py"
+      - "tests/test_fact_graph.py"
+      - "docs/research/typed-source-facts.md"
+      - ".github/workflows/native-facts-pinned.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-facts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch immutable nested-source corpus sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/aelius-herodianus-et-pseudo-herodianus.peri-paqw-n.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Prove exact typed graph restoration from loaded native TF
+        shell: python
+        run: |
+          from itertools import islice
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.record_stream import FieldArray, parse_file
+          from opengreek_tf.fact_graph import (
+              build_fact_graph, restore_fact_fields,
+          )
+          from opengreek_tf.fact_probe import write_fact_probe, read_fact_probe
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          path = (
+              "data/corpus/"
+              "aelius-herodianus-et-pseudo-herodianus.peri-paqw-n.jsonl"
+          )
+          row = next(islice(parse_file(root, path), 1042, None))
+          assert row.ordinal == 1043
+          lines = row.fields.get("text_lines")
+          assert isinstance(lines, FieldArray) and len(lines.items) >= 3
+          assert row.text.count("\x7f") == 1
+
+          graph = build_fact_graph(row)
+          assert restore_fact_fields(graph) == row.fields
+          destination = Path("native-facts")
+          write_fact_probe(row, destination)
+          native = read_fact_probe(destination)
+          assert native.occurrence_key == row.occurrence_key
+          assert native == graph
+          assert restore_fact_fields(native) == row.fields
+
+          api = Fabric(locations=str(destination), silent="deep").load(
+              "form fact_kind fact_text has_fact", silent="deep"
+          )
+          assert api
+          passage = api.F.otype.s("passage")[0]
+          assert api.T.text(passage, fmt="text-orig-full") == row.text
+          print(
+              "Native Text-Fabric roundtrip preserved real source record, "
+              f"{len(native.nodes)} ordered typed source facts, exact Greek text"
+          )
