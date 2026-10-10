@@ -193,9 +193,15 @@ def write_registry_probe(
         director,
         slotType="atom",
         generic={"source": "Pinned Open Greek identity-ledger research probe"},
-        # CV 13.1 requires at least one named text format. This renders
-        # *actual opaque source IDs*, never fabricated Greek textual content.
-        otext={"fmt:metadata-id": "{source_record_id}"},
+        # CV 13.1 insists on explicit (possibly empty) section definitions
+        # and the conventional default format. Both formats display *actual
+        # opaque registry IDs* only; no Greek word or passage is invented.
+        otext={
+            "sectionTypes": "",
+            "sectionFeatures": "",
+            "fmt:text-orig-full": "{source_record_id}",
+            "fmt:metadata-id": "{source_record_id}",
+        },
         intFeatures=integer_features,
         featureMeta=features,
         warn=False,
