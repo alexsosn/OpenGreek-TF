@@ -9,7 +9,6 @@ import pytest
 from tf.fabric import Fabric  # type: ignore[import-untyped]
 
 from opengreek_tf.fact_graph import (
-    FactGraph,
     FactGraphError,
     build_fact_graph,
     restore_fact_fields,
