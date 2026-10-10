@@ -307,7 +307,7 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
         """Absent optional features differ from present empty/zero values."""
         if name not in present:
             return None
-        return getattr(api.F, name).v(node)
+        return cast(str | int | None, getattr(api.F, name).v(node))
 
     passages = api.F.otype.s("passage")
     if len(passages) != 1:
@@ -351,10 +351,10 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
         if kind_raw not in ("object", "array", "str", "int", "bool"):
             raise FactGraphError("unknown native fact kind")
         kind = cast(FactKind, kind_raw)
-        present = [("str", read_feature("fact_str", handle)),
+        typed_values = [("str", read_feature("fact_str", handle)),
                    ("int", read_feature("fact_int", handle)),
                    ("bool", read_feature("fact_bool", handle))]
-        nonempty = [(name, val) for name, val in present if val is not None]
+        nonempty = [(name, val) for name, val in typed_values if val is not None]
         if kind in ("object", "array"):
             if nonempty:
                 raise FactGraphError("container has unexpected scalar feature")
@@ -386,9 +386,9 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
             raise FactGraphError("invalid native fact array index")
         result.append(
             FactNode(
-                id=cast(int, ident), parent_id=parent.get(handle),
-                position=cast(int, pos),
-                key=cast(str | None, key), index=cast(int | None, index),
+                id=ident, parent_id=parent.get(handle),
+                position=pos,
+                key=key, index=index,
                 kind=kind, value=value,
             )
         )
@@ -401,8 +401,8 @@ def read_native_fact_graph(destination: str | Path) -> FactGraph:
         raise FactGraphError("invalid native source occurrence")
     graph = FactGraph(
         family=cast(Family, family),
-        relative_file=cast(str, relative_file),
-        ordinal=cast(int, ordinal),
+        relative_file=relative_file,
+        ordinal=ordinal,
         nodes=tuple(result),
     )
     decode_fact_graph(graph)
