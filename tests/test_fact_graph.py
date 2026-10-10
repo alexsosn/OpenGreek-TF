@@ -200,3 +200,41 @@ def test_native_probe_retains_empty_array_with_no_scalar_items(
     dest = tmp_path / "native"
     write_fact_probe(record, dest)
     assert restore_fact_fields(read_fact_probe(dest)) == fields
+
+
+def test_loaded_native_probe_rejects_corrupt_text_atoms(
+    tmp_path: Path, representative: FieldObject
+) -> None:
+    record = _row(representative)
+    dest = tmp_path / "native"
+    write_fact_probe(record, dest)
+    form_path = dest / "form.tf"
+    original = form_path.read_text(encoding="utf-8")
+    assert "λόγος" in original
+    form_path.write_text(original.replace("λόγος", "χάος", 1), encoding="utf-8")
+    with pytest.raises(FactGraphError, match="text"):
+        read_fact_probe(dest)
+
+
+def test_loaded_native_probe_rejects_wrong_passage_key(
+    tmp_path: Path, representative: FieldObject
+) -> None:
+    record = _row(representative)
+    dest = tmp_path / "native"
+    write_fact_probe(record, dest)
+    key_path = dest / "passage_key.tf"
+    original = key_path.read_text(encoding="utf-8")
+    assert "data/corpus/a.jsonl:1043" in original
+    key_path.write_text(
+        original.replace("data/corpus/a.jsonl:1043", "data/corpus/a.jsonl:1044", 1),
+        encoding="utf-8",
+    )
+    with pytest.raises(FactGraphError, match="passage key"):
+        read_fact_probe(dest)
+
+
+def test_loaded_native_probe_supports_empty_source_text(tmp_path: Path) -> None:
+    fields = FieldObject((("urn", "empty"), ("text", "")))
+    dest = tmp_path / "native"
+    write_fact_probe(_row(fields), dest)
+    assert restore_fact_fields(read_fact_probe(dest)) == fields
