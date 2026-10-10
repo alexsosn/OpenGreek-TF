@@ -33,6 +33,31 @@ class Decision:
     winning_claim: Claim | None = None
 
 
+class GithubAPI:
+    """GitHub REST snapshot client; no automatic retries on partial failures."""
+
+    def __init__(self, repo: str, token: str | None = None) -> None:
+        self.repo = repo
+        self.token = token
+
+    def get(self, path: str) -> Any:
+        raise NotImplementedError
+
+    def post(self, path: str, payload: dict[str, Any]) -> Any:
+        raise NotImplementedError
+
+    def patch(self, path: str, payload: dict[str, Any]) -> Any:
+        raise NotImplementedError
+
+    def pages(self, path: str) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    def snapshot(
+        self, issue: int
+    ) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
+        raise NotImplementedError
+
+
 def pr_implements_issue(pr: dict[str, Any], issue: int) -> bool:
     raise NotImplementedError
 
