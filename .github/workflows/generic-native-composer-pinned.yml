@@ -1,0 +1,143 @@
+name: Pinned real mixed text and registry native TF composer
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/native_composer.py"
+      - "tests/test_native_composer.py"
+      - "docs/research/generic-native-composer.md"
+      - ".github/workflows/generic-native-composer-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-mixed-composer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch pinned genuine textual rows and scholarly registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/source_registry.json
+          /data/corpus/abydenus.fragmenta.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Independently load real mixed native TF graph and compare source
+        shell: python
+        run: |
+          import json
+          import time
+          from dataclasses import asdict
+          from pathlib import Path
+          from tf.fabric import Fabric
+
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.native_composer import (
+              NativeRecord, read_native_records,
+              validate_native_records, write_native_records,
+          )
+          from opengreek_tf.registry_stream import iter_registry
+          from opengreek_tf.record_stream import FieldArray, FieldObject, parse_file
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          source = json.loads((root / "data/source_registry.json").read_text(encoding="utf-8"))
+          registry = tuple(
+              row for row in iter_registry(root)
+              if row.slug == "abydenus" and row.kind == "author"
+              or row.slug == "abydenus.fragmenta" and row.kind == "work"
+          )
+          assert len(registry) == 2
+          author, work = registry
+          assert author.kind == "author"
+          assert work.kind == "work"
+          rows = tuple(parse_file(root, "data/corpus/abydenus.fragmenta.jsonl"))
+          assert len(rows) == 6
+          assert all(row.text and row.fields.require("urn") == "abydenus.fragmenta" for row in rows)
+          chosen = rows[:2]
+
+          def native_registry(row):
+              return NativeRecord(
+                  *row.occurrence_key, row.slug, f"registry-{row.kind}", row.fields,
+              )
+          def native_passage(row):
+              return NativeRecord(
+                  row.relative_file, row.ordinal,
+                  f"{row.relative_file}:{row.ordinal}",
+                  f"{row.family}-passage", row.fields, text=row.text,
+              )
+
+          records = (
+              native_registry(author),
+              native_passage(chosen[0]),
+              native_registry(work),
+              native_passage(chosen[1]),
+          )
+          out = Path("native-mixed")
+          t0 = time.perf_counter()
+          stats = write_native_records(records, out)
+          build_time = round(time.perf_counter() - t0, 3)
+          assert asdict(stats)["records"] == 4
+          assert stats.metadata_records == stats.text_records == 2
+          observed = read_native_records(out)
+          assert validate_native_records(records, out) == stats
+          assert observed == records
+          assert observed[1].text == chosen[0].text
+          assert observed[3].text == chosen[1].text
+
+          def exact(v):
+              if isinstance(v, FieldObject):
+                  return ("object", tuple((k, exact(x)) for k, x in v.items))
+              if isinstance(v, dict):
+                  return ("object", tuple((k, exact(x)) for k, x in v.items()))
+              if isinstance(v, FieldArray):
+                  return ("array", tuple(exact(x) for x in v.items))
+              if isinstance(v, list):
+                  return ("array", tuple(exact(x) for x in v))
+              return (type(v).__name__, v)
+          assert exact(observed[0].fields) == exact(source["authors"]["abydenus"])
+          assert exact(observed[2].fields) == exact(source["works"]["abydenus.fragmenta"])
+          raw_lines = [
+              json.loads(line) for line in (
+                  root / "data/corpus/abydenus.fragmenta.jsonl"
+              ).read_text(encoding="utf-8").splitlines()
+          ]
+          assert exact(observed[1].fields) == exact(raw_lines[0])
+          assert exact(observed[3].fields) == exact(raw_lines[1])
+          api = Fabric(locations=str(out), silent="deep").load(
+              "source_file source_ordinal source_seq source_record_id "
+              "record_kind atom_kind fact_count fact_digest fact_kind fact_id "
+              "fact_position fact_key fact_text fact_int has_fact form", silent="deep",
+          )
+          assert api
+          assert len(api.F.otype.s("metadataRecord")) == 2
+          assert len(api.F.otype.s("passage")) == 2
+          assert not api.F.otype.s("word")
+          assert api.T.text(api.F.otype.s("passage")[0], fmt="text-orig-full") == chosen[0].text
+          print(json.dumps({
+              "pinned_mixed_composition": "PASS", **asdict(stats),
+              "build_and_loaded_validation_seconds": build_time,
+              "native_tf_bytes": sum(p.stat().st_size for p in out.glob("*.tf")),
+          }, sort_keys=True))
