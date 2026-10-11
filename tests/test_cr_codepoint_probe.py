@@ -98,8 +98,13 @@ def test_independent_reader_rejects_tampered_integer_codepoint(
     write_cr_codepoint_probe("α\rβ", out, source_file="data/corpus/a.jsonl", source_ordinal=1)
     path = out / "codepoint.tf"
     content = path.read_text(encoding="utf-8")
-    assert "13" in content
-    path.write_text(content.replace("13", replacement, 1), encoding="utf-8")
+    header, separator, payload = content.partition("\\n\\n")
+    assert separator and "\\t13" in payload
+    # TF writes @dateWritten with a volatile timestamp, which may itself
+    # contain "13". Mutate a *source codepoint value* only, never metadata.
+    edited = payload.replace("\\t13", f"\\t{replacement}", 1)
+    assert edited != payload
+    path.write_text(header + separator + edited, encoding="utf-8")
     with pytest.raises(CRCodepointError):
         read_cr_codepoint_probe(out)
 
