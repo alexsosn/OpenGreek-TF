@@ -74,6 +74,9 @@ def test_registry_types_order_and_true_null_round_trip(registry: Path) -> None:
     work = records[2].fields
     assert work.get("default_edition") is None
     assert "default_edition" in dict(work.items)
+    assert work.require("default_edition") is None
+    with pytest.raises(KeyError):
+        records[0].fields.require("default_edition")
     assert work.get("tags") == FieldArray(("genre:poetry", "genre:poetry", ""))
     editions = work.get("editions")
     assert isinstance(editions, FieldObject)
@@ -97,6 +100,7 @@ def test_graph_rejects_wrong_null_kind_and_keeps_absent_distinct(registry: Path)
     changed[index] = replace(changed[index], value=0)
     with pytest.raises(FactGraphError):
         restore_fact_fields(replace(graph, nodes=tuple(changed)))
+    # A forged null payload cannot masquerade as a scalar after digest recomputation.
     assert dict(record.fields.items)["default_edition"] is None
     assert "default_edition" not in dict(tuple(iter_registry(registry))[0].fields.items)
 
