@@ -83,7 +83,7 @@ jobs:
               for ordinal, line in enumerate(lines, start=1):
                   obj = json.loads(line.decode("utf-8"))
                   assert type(obj) is dict and type(obj["text"]) is str
-                  assert "\\r" not in obj["text"]
+                  assert "\r" not in obj["text"]
                   raw_rows.append(obj)
                   expected_occurrences.append((name, ordinal))
           assert len(raw_rows) == 232
