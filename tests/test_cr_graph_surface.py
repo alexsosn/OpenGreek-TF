@@ -130,3 +130,30 @@ def test_reader_rejects_forged_native_text_rendering_config(tmp_path: Path) -> N
     )
     with pytest.raises(CRCodepointError, match="rendering|otext"):
         read_cr_codepoint_probe(out)
+
+
+def test_reader_rejects_additional_forged_text_format(tmp_path: Path) -> None:
+    from tf.fabric import Fabric  # type: ignore[import-untyped]
+
+    out = tmp_path / "native"
+    original = "λόγος\rἄλλος"
+    assert original.count("\r") == 1
+    write_cr_codepoint_probe(
+        original, out,
+        source_file="data/corpus/greek.jsonl", source_ordinal=7,
+    )
+    assert read_cr_codepoint_probe(out).text == original
+    # Preserve the genuine required format unchanged, but add an extra TF
+    # research-facing text recipe that displays the source filename.
+    fabric = Fabric(locations=str(out), silent="deep")
+    assert fabric.save(
+        metaData={"otext": {
+            "sectionTypes": "passage",
+            "sectionFeatures": "locus",
+            "fmt:text-orig-full": "{form}",
+            "fmt:forged-text": "{source_file}",
+        }},
+        silent="deep",
+    )
+    with pytest.raises(CRCodepointError, match="rendering|otext"):
+        read_cr_codepoint_probe(out)
