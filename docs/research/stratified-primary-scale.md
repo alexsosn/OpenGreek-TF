@@ -12,7 +12,7 @@ The immutable Git tree `open-greek/open-greek-corpus@338aa27310b3cfe2588a993b4d1
 | Continuous historical prose | `data/corpus/herodotus.historiae.jsonl` | 2,901,140 |
 | Lexicography | `data/corpus/moeris.lexicon-atticum.jsonl` | 3,274,855 |
 
-Total original pinned JSONL **9,627,790 bytes**, compared to the ~1 MB previous textual sample. Source row counts, Unicode codepoints, layout slots and CR exposure must be **measured from the actual immutable files**, not invented based on name or Git blob size.
+Total original pinned JSONL **9,627,790 bytes**, compared to the ~1 MB previous textual sample. Independently reading the actual immutable original Git blobs (not relying on path names, Git blob sizes, or the parser) established **15,683 + 4,335 + 11,959 = 31,977** physical passages and **674,745 + 1,165,946 + 485,521 = 2,326,212** original Unicode codepoints, with **zero source-text CR** across these files. Source forms vary: Iliad has six core fields, Herodotus includes `text_lines`, and Moeris includes `cts`/`corrections`. These counts are pinned CI acceptance values. Actual Text-Fabric native F/E node counts, layout slot counts, peak RSS and serialized artifact size remain to be established by running pinned CI.
 
 ## Research → RED-first TDD → implementation → verification
 
