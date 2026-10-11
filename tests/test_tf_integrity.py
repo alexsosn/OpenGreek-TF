@@ -76,3 +76,10 @@ def test_canonical_manifest_rejects_empty_payload(tmp_path: Path) -> None:
     (tmp_path / ".tf").mkdir()
     with pytest.raises(NativeTfIntegrityError, match="feature files"):
         native_tf_manifest(tmp_path)
+
+
+def test_text_fabric_13_1_utc_aware_written_stamp(tmp_path: Path) -> None:
+    # tf.core.helpers.utcnow() is dt.now(timezone.utc), then the writer
+    # appends a literal Z to the ISO timestamp containing +00:00.
+    _write_tf(tmp_path, "atom_kind.tf", "2026-10-11T10:12:55+00:00Z", "1\\tsource-row\\n")
+    assert native_tf_manifest(tmp_path).tf_file_count == 1
