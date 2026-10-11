@@ -220,9 +220,15 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
         "fact_kind", "fact_id", "fact_position", "has_fact",
     }
     optional = {"fact_key", "fact_text", "fact_int", "form"}
-    declared = set(discovered["nodes"]) | set(discovered["edges"])
-    if not mandatory.issubset(declared):
-        raise NativeComposeError("missing required TF source feature")
+    declared_nodes = set(discovered["nodes"])
+    declared_edges = set(discovered["edges"])
+    declared = declared_nodes | declared_edges
+    if (
+        not (mandatory - {"has_fact"}).issubset(declared_nodes)
+        or "has_fact" not in declared_edges
+        or "has_fact" in declared_nodes
+    ):
+        raise NativeComposeError("missing or wrong-kind required native TF feature")
     api = fabric.load(
         " ".join(sorted(mandatory | (optional & declared))), silent="deep",
     )
@@ -235,8 +241,10 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
         raise NativeComposeError("missing source records")
     if api.F.otype.s("word") or (destination / "word.tf").exists():
         raise NativeComposeError("native composer invented word-level content")
-    # Known native node types are validated through exhaustive ownership below.
-    # The standard F.otype.all API iterates node IDs, not node-type labels.
+    # TF's F.otype.all reports node-type labels (big to small), not node IDs.
+    allowed = {"atom", "passage", "metadataRecord", "sourceFact"}
+    if set(api.F.otype.all) - allowed:
+        raise NativeComposeError("unexpected Text-Fabric node type")
     used_atoms: set[int] = set()
     used_facts: set[int] = set()
     used_ids: set[tuple[str, int]] = set()
