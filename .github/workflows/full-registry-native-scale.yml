@@ -140,7 +140,9 @@ jobs:
           edge_count += sum(len(api.E.has_fact.f(n)) for n in api.F.otype.s("sourceFact"))
           assert edge_count == 252276
 
-          tf_files = sorted(out.glob("*.tf"))
+          # TF 13.1 creates a .tf/ cache *directory*, which matches *.tf.
+          # Hash only serialized feature files, not its cache directory.
+          tf_files = sorted(path for path in out.glob("*.tf") if path.is_file())
           assert tf_files and not (out / "word.tf").exists()
           output_bytes = sum(f.stat().st_size for f in tf_files)
           # A digest records this specific output; no second copy is written.
