@@ -34,14 +34,21 @@ class FieldObject:
     items: tuple[tuple[str, FieldValue], ...]
 
     def get(self, key: str) -> FieldValue | None:
-        """Get an audited field; None means absent (source null is disallowed)."""
+        """Get field value. For nullable schemas, inspect .items to distinguish absent."""
         for found, value in self.items:
             if found == key:
                 return value
         return None
 
+    def require(self, key: str) -> FieldValue:
+        """Return a present typed member (including explicit null), else KeyError."""
+        for found, value in self.items:
+            if found == key:
+                return value
+        raise KeyError(key)
 
-FieldValue: TypeAlias = str | int | bool | FieldArray | FieldObject
+
+FieldValue: TypeAlias = str | int | bool | None | FieldArray | FieldObject
 
 
 @dataclass(frozen=True, slots=True)

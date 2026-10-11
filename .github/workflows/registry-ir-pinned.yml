@@ -1,0 +1,129 @@
+name: Pinned complete source registry typed IR conservation
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/registry_stream.py"
+      - "src/opengreek_tf/fact_graph.py"
+      - "src/opengreek_tf/record_stream.py"
+      - "tests/test_registry_stream.py"
+      - "docs/research/full-source-registry-typed-ir.md"
+      - ".github/workflows/registry-ir-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  registry-typed-ir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch immutable Open Greek registry and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/source_registry.json
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Independently reconstitute every typed registry record and source fact
+        shell: python
+        run: |
+          import json
+          import time
+          from collections import Counter
+          from pathlib import Path
+
+          from opengreek_tf.fact_graph import build_fact_graph, restore_fact_fields
+          from opengreek_tf.record_stream import FieldArray, FieldObject
+          from opengreek_tf.registry_stream import iter_registry
+          from opengreek_tf.source import verify_source
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          # Independent stock JSON parser; not the strict source parser under test.
+          raw = json.loads((root / "data/source_registry.json").read_text(encoding="utf-8"))
+          assert set(raw) == {"authors", "works"}
+          assert len(raw["authors"]) == 3315
+          assert len(raw["works"]) == 11075
+          assert sum(len(w["editions"]) for w in raw["works"].values()) == 10202
+          assert sum(len(w["tags"]) for w in raw["works"].values()) == 23254
+          assert sum(w["default_edition"] is None for w in raw["works"].values()) == 8158
+          assert sum(
+              e["year"] is None for w in raw["works"].values()
+              for e in w["editions"].values()
+          ) == 4577
+          assert all(w["author"] in raw["authors"] for w in raw["works"].values())
+          assert all(
+              w["default_edition"] is None or w["default_edition"] in w["editions"]
+              for w in raw["works"].values()
+          )
+
+          def semantic_order(item):
+              # Independent ordered, type-preserving interpretation of stock
+              # JSON and typed IR. Plain dict equality would miss reordered
+              # source fields; Python also equates True and integer 1.
+              if isinstance(item, FieldObject):
+                  return ("object", tuple(
+                      (key, semantic_order(v)) for key, v in item.items
+                  ))
+              if isinstance(item, dict):
+                  return ("object", tuple(
+                      (key, semantic_order(v)) for key, v in item.items()
+                  ))
+              if isinstance(item, FieldArray):
+                  return ("array", tuple(semantic_order(v) for v in item.items))
+              if isinstance(item, list):
+                  return ("array", tuple(semantic_order(v) for v in item))
+              return (type(item).__name__, item)
+
+          counts = Counter()
+          actual_keys = {"authors": [], "works": []}
+          t0 = time.perf_counter()
+          for record in iter_registry(root):
+              family = record.kind + "s"
+              counts[record.kind] += 1
+              actual_keys[family].append(record.slug)
+              assert record.ordinal == len(actual_keys[family])
+              assert record.occurrence_key == (
+                  "data/source_registry.json#" + family, record.ordinal
+              )
+              graph = build_fact_graph(record)
+              reconstructed = restore_fact_fields(graph)
+              assert reconstructed == record.fields
+              assert semantic_order(reconstructed) == semantic_order(
+                  raw[family][record.slug]
+              )
+              counts["fact_nodes"] += graph.declared_size
+              counts["null_facts"] += sum(n.kind == "null" for n in graph.nodes)
+          duration = round(time.perf_counter() - t0, 3)
+          for family in ("authors", "works"):
+              assert actual_keys[family] == list(raw[family])
+          assert counts["author"] == 3315
+          assert counts["work"] == 11075
+          assert counts["null_facts"] == 8158 + 4577
+          print(json.dumps({
+              "source_registry_fact_IR": "PASS",
+              **dict(counts),
+              "parse_plus_full_fact_graph_roundtrip_seconds": duration,
+              "registry_bytes": (root / "data/source_registry.json").stat().st_size,
+          }, sort_keys=True))

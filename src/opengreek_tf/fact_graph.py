@@ -8,11 +8,21 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Literal, TypeAlias
+from typing import Literal, Protocol, TypeAlias
 
-from .record_stream import FieldArray, FieldObject, FieldValue, ParsedRecord
+from .record_stream import FieldArray, FieldObject, FieldValue
 
-FactKind: TypeAlias = Literal["object", "array", "str", "int", "bool"]
+FactKind: TypeAlias = Literal["object", "array", "str", "int", "bool", "null"]
+
+
+class FactSource(Protocol):
+    """Any typed source record with a stable physical occurrence identity."""
+
+    @property
+    def fields(self) -> FieldObject: ...
+
+    @property
+    def occurrence_key(self) -> tuple[str, int]: ...
 
 
 class FactGraphError(ValueError):
@@ -61,7 +71,7 @@ def _digest(
     return h.hexdigest()
 
 
-def build_fact_graph(record: ParsedRecord) -> FactGraph:
+def build_fact_graph(record: FactSource) -> FactGraph:
     """Flatten typed source facts into immutable parent-indexed graph nodes."""
 
     nodes: list[FactNode] = []
@@ -77,6 +87,9 @@ def build_fact_graph(record: ParsedRecord) -> FactGraph:
             scalar: str | int | bool | None = None
         elif isinstance(value, FieldArray):
             kind = "array"
+            scalar = None
+        elif value is None:
+            kind = "null"
             scalar = None
         elif type(value) is bool:
             kind = "bool"
@@ -160,7 +173,9 @@ def restore_fact_fields(graph: FactGraph) -> FieldObject:
             raise FactGraphError("expected exact integer scalar")
         elif node.kind == "bool" and type(node.value) is not bool:
             raise FactGraphError("expected exact boolean scalar")
-        elif node.kind not in {"str", "int", "bool", "object", "array"}:
+        elif node.kind == "null" and node.value is not None:
+            raise FactGraphError("null source fact must have no scalar value")
+        elif node.kind not in {"str", "int", "bool", "null", "object", "array"}:
             raise FactGraphError("unknown source fact kind")
         if node.parent_id is not None:
             children.setdefault(node.parent_id, []).append(node)
@@ -171,6 +186,8 @@ def restore_fact_fields(graph: FactGraph) -> FieldObject:
         if node.kind not in {"object", "array"}:
             if successors:
                 raise FactGraphError("scalar source fact cannot have children")
+            if node.kind == "null":
+                return None
             value = node.value
             if not isinstance(value, (str, int, bool)):
                 raise FactGraphError("scalar source fact has invalid type")
