@@ -115,7 +115,7 @@ def test_reader_rejects_forged_native_text_rendering_config(tmp_path: Path) -> N
         original, out,
         source_file="data/corpus/greek.jsonl", source_ordinal=7,
     )
-    assert original.count("\\r") == 1
+    assert original.count("\r") == 1
     assert read_cr_codepoint_probe(out).text == original
     # This is an *allowed* config feature name but rewrites the native
     # researcher-facing text recipe to render the file name as Greek text.
