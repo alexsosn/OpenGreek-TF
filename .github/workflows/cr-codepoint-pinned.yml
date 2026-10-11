@@ -1,0 +1,108 @@
+name: Pinned real source and synthetic native CR-codepoint proof
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/cr_codepoint_probe.py"
+      - "tests/test_cr_codepoint_probe.py"
+      - "docs/research/native-cr-codepoint-atoms.md"
+      - ".github/workflows/cr-codepoint-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch exactly pinned Herodian DEL-bearing source record
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/aelius-herodianus-et-pseudo-herodianus.peri-paqw-n.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+
+      - name: Independently reload native TF and contrast normal T.text with CR atom source
+        shell: python
+        run: |
+          import json
+          from itertools import islice
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.record_stream import parse_file
+          from opengreek_tf.cr_codepoint_probe import (
+              write_cr_codepoint_probe, read_cr_codepoint_probe,
+          )
+
+          source = Path("upstream")
+          assert verify_source(source).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          path = "data/corpus/aelius-herodianus-et-pseudo-herodianus.peri-paqw-n.jsonl"
+          record = next(islice(parse_file(source, path), 1042, None))
+          assert record.ordinal == 1043
+          assert "\x7f" in record.text
+          assert "\r" not in record.text
+          real_out = Path("pinned-real-control-atoms")
+          write_cr_codepoint_probe(
+              record.text, real_out,
+              source_file=record.relative_file, source_ordinal=record.ordinal,
+          )
+          recovered = read_cr_codepoint_probe(real_out)
+          assert recovered.text == record.text
+          assert recovered.cr_count == 0
+          assert recovered.source_file == path
+          assert recovered.source_ordinal == 1043
+          api = Fabric(locations=str(real_out), silent="deep").load(
+              "form atom_kind source_file source_ordinal "
+              "text_digest text_length cr_count locus", silent="deep",
+          )
+          assert api
+          assert api.T.text(api.F.otype.s("passage")[0], fmt="text-orig-full") == record.text
+          assert not api.F.otype.s("word")
+
+          synthetic = "α\r\nβ\rγ"
+          synthetic_out = Path("synthetic-native-cr-atoms")
+          write_cr_codepoint_probe(
+              synthetic, synthetic_out,
+              source_file="diagnostic/synthetic.jsonl", source_ordinal=1,
+          )
+          loaded = read_cr_codepoint_probe(synthetic_out)
+          assert loaded.text == synthetic and loaded.cr_count == 2
+          ca = Fabric(locations=str(synthetic_out), silent="deep").load(
+              "form atom_kind codepoint source_file source_ordinal "
+              "text_digest text_length cr_count locus", silent="deep",
+          )
+          assert ca
+          assert ca.T.text(ca.F.otype.s("passage")[0], fmt="text-orig-full") != synthetic
+          assert not ca.F.otype.s("word")
+          print(json.dumps({
+              "pinned_real_source": path,
+              "real_ordinal": record.ordinal,
+              "real_DEL_count": record.text.count("\x7f"),
+              "real_CR_count": recovered.cr_count,
+              "synthetic_CR_count": loaded.cr_count,
+              "native_cr_reconstruction": "PASS",
+              "default_T_text_cr_fidelity": "NOT_SUPPORTED",
+          }, sort_keys=True))
