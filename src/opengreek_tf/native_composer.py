@@ -22,7 +22,7 @@ from .fact_graph import (
     build_fact_graph,
     restore_fact_fields,
 )
-from .record_stream import FieldObject
+from .record_stream import FieldArray, FieldObject, FieldValue
 from .text_runs import segment_runs
 
 
@@ -106,6 +106,52 @@ def _stats(records: tuple[NativeRecord, ...], graphs: tuple[FactGraph, ...]) -> 
         source_atoms=len(records),
         fact_nodes=sum(graph.declared_size for graph in graphs),
     )
+
+
+def _exact_field_values(a: FieldValue, b: FieldValue) -> bool:
+    """Compare ordered nested source data, preserving exact scalar *types*.
+
+    Ordinary Python/dataclass equality equates boolean False to integer 0,
+    which is unacceptable for a typed source graph conservation proof.
+    """
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, FieldObject):
+        if not isinstance(b, FieldObject) or len(a.items) != len(b.items):
+            return False
+        return all(
+            key_a == key_b and _exact_field_values(value_a, value_b)
+            for (key_a, value_a), (key_b, value_b) in zip(a.items, b.items, strict=True)
+        )
+    if isinstance(a, FieldArray):
+        if not isinstance(b, FieldArray) or len(a.items) != len(b.items):
+            return False
+        return all(
+            _exact_field_values(value_a, value_b)
+            for value_a, value_b in zip(a.items, b.items, strict=True)
+        )
+    return a == b
+
+
+def _exact_native_records(
+    expected: tuple[NativeRecord, ...], loaded: tuple[NativeRecord, ...],
+) -> bool:
+    """Strict source equality without making a second full FactGraph set."""
+    if len(expected) != len(loaded):
+        return False
+    for a, b in zip(expected, loaded, strict=True):
+        if (
+            a.source_file != b.source_file
+            or type(a.ordinal) is not type(b.ordinal)
+            or a.ordinal != b.ordinal
+            or a.source_record_id != b.source_record_id
+            or a.record_kind != b.record_kind
+            or type(a.text) is not type(b.text)
+            or a.text != b.text
+            or not _exact_field_values(a.fields, b.fields)
+        ):
+            return False
+    return True
 
 
 def write_native_records(
@@ -230,7 +276,7 @@ def write_native_records(
     # Do not preflight a *second* full FactGraph collection while the first
     # is still live; public validate_native_records remains fully independent.
     loaded = read_native_records(destination)
-    if loaded != records:
+    if not _exact_native_records(records, loaded):
         raise NativeComposeError(
             f"generic composer conservation failure: {len(records)} vs {len(loaded)}"
         )
@@ -422,7 +468,7 @@ def validate_native_records(
     """Compare source records with independently reloaded native TF features."""
     graphs = _preflight(records)
     actual = read_native_records(destination)
-    if actual != records:
+    if not _exact_native_records(records, actual):
         raise NativeComposeError(
             f"generic composer conservation failure: {len(records)} vs {len(actual)}"
         )
