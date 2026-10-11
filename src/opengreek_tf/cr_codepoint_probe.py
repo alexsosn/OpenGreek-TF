@@ -189,6 +189,30 @@ def read_cr_codepoint_probe(destination: Path) -> CRProbeResult:
     all_slots = set(api.F.otype.s("atom"))
     if not slots or set(slots) != all_slots:
         raise CRCodepointError("orphan or duplicated source text atom")
+    # Full feature-name validation is insufficient: an attacker may add a
+    # forged value to a *known* feature on an unrelated native slot. Preserve
+    # provenance only on the passage and final authentic source-row anchor.
+    if (
+        api.F.atom_kind.v(passage) is not None
+        or (with_form and api.F.form.v(passage) is not None)
+        or (with_cr and api.F.codepoint.v(passage) is not None)
+    ):
+        raise CRCodepointError("unexpected passage text-slot annotation")
+    for slot in slots:
+        if (
+            api.F.source_ordinal.v(slot) is not None
+            or api.F.locus.v(slot) is not None
+            or api.F.text_digest.v(slot) is not None
+            or api.F.text_length.v(slot) is not None
+            or api.F.cr_count.v(slot) is not None
+        ):
+            raise CRCodepointError("unexpected provenance feature on text slot")
+        source_name = api.F.source_file.v(slot)
+        if slot == slots[-1]:
+            if source_name != file_name:
+                raise CRCodepointError("invalid final source-row provenance")
+        elif source_name is not None:
+            raise CRCodepointError("unexpected provenance on non-source slot")
     kinds = [api.F.atom_kind.v(slot) for slot in slots]
     if kinds.count("source-row") != 1 or kinds[-1] != "source-row":
         raise CRCodepointError("source-row anchor must occur exactly once at end")
