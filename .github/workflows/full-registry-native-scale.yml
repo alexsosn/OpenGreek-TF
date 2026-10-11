@@ -4,11 +4,14 @@ on:
   pull_request:
     paths:
       - "src/opengreek_tf/registry_materializer.py"
+      - "src/opengreek_tf/registry_build_runner.py"
       - "src/opengreek_tf/tf_integrity.py"
       - "src/opengreek_tf/native_composer.py"
       - "tests/test_registry_materializer.py"
+      - "tests/test_registry_build_runner.py"
       - "tests/test_tf_integrity.py"
       - "docs/research/full-registry-native-scale.md"
+      - "docs/research/registry-process-isolation.md"
       - ".github/workflows/full-registry-native-scale.yml"
   workflow_dispatch:
 
@@ -55,7 +58,8 @@ jobs:
           from tf.fabric import Fabric
 
           from opengreek_tf.source import verify_source
-          from opengreek_tf.registry_materializer import materialize_registry
+          from opengreek_tf.registry_build_runner import run_isolated_registry_build
+          from opengreek_tf.native_composer import NativeStats
           from opengreek_tf.native_composer import read_native_records
           from opengreek_tf.tf_integrity import native_tf_manifest
           from opengreek_tf.record_stream import FieldObject, FieldArray
@@ -76,9 +80,9 @@ jobs:
                      for e in w["editions"].values()) == 4577
           assert all(w["author"] in raw["authors"] for w in raw["works"].values())
 
-          # Live RSS is a stage-boundary snapshot, not an intra-stage peak.
-          # Keep the process-wide ru_maxrss separately. The independent
-          # stock-JSON fixture is intentionally already loaded at this point.
+          # Parent verifier and child native composer now use separate
+          # interpreters. VmRSS snapshots are not within-phase maxima. Keep
+          # both process-wide high-water figures instead of conflating them.
           phase_memory = []
           def record_phase(name):
               status = (Path("/proc/self/status").read_text(encoding="utf-8"))
@@ -97,11 +101,17 @@ jobs:
           out = Path("native-full-registry")
           t0 = time.perf_counter()
           record_phase("before-native-build")
-          stats = materialize_registry(root, out, on_phase=record_phase)
-          build_and_writer_check_s = round(time.perf_counter() - t0, 3)
+          build_report = run_isolated_registry_build(root, out)
+          isolated_wall_seconds = round(time.perf_counter() - t0, 3)
+          stats = NativeStats(**build_report["stats"])
+          build_and_writer_check_s = build_report["build_seconds"]
+          record_phase("native-child-complete")
           assert [entry["phase"] for entry in phase_memory] == [
-              "before-native-build", "registry-input-loaded",
-              "preflight-complete", "walk-complete", "load-validated",
+              "before-native-build", "native-child-complete",
+          ]
+          assert [entry["phase"] for entry in build_report["phases"]] == [
+              "registry-input-loaded", "preflight-complete",
+              "walk-complete", "load-validated",
           ]
           assert all(entry["live_rss_mib"] is not None for entry in phase_memory)
           assert stats.records == 14390
@@ -167,6 +177,8 @@ jobs:
           assert edge_count == 252276
 
           manifest = native_tf_manifest(out)
+          assert build_report["canonical_sha256"] == manifest.canonical_sha256
+          assert build_report["native_tf_bytes"] == manifest.output_bytes
           assert manifest.tf_file_count == 18
           # Source-pin and serializer-gated feature content, ignoring *only*
           # TF's @dateWritten headers. The previous independent run established
@@ -175,6 +187,7 @@ jobs:
               "6dec2456986793999f8f1fe98408d00a8c4c73c98e6c066b6c8f24e0aa57565e"
           )
           assert not (out / "word.tf").exists()
+          record_phase("independent-verification-complete")
           print(json.dumps({
               "full_registry_native_tf": "PASS",
               **asdict(stats),
@@ -184,9 +197,14 @@ jobs:
               "tf_file_count": manifest.tf_file_count,
               "has_fact_edges": edge_count,
               "build_and_writer_validation_seconds": build_and_writer_check_s,
+              "isolated_process_wall_seconds": isolated_wall_seconds,
               "independent_reload_seconds": reload_s,
-              "peak_rss_mib": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
-              "phase_memory_snapshots": phase_memory,
+              "isolated_builder_peak_rss_mib": build_report["peak_rss_mib"],
+              "isolated_builder_phase_snapshots": build_report["phases"],
+              "independent_verifier_peak_rss_mib": round(
+                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1
+              ),
+              "independent_verifier_phase_snapshots": phase_memory,
               "raw_sha256_feature_manifest": manifest.raw_sha256,
               "canonical_sha256_feature_manifest": manifest.canonical_sha256,
           }, sort_keys=True))
