@@ -130,7 +130,7 @@ def _work(
     default = obj["default_edition"]
     if default is not None and type(default) is not str:
         raise RegistryError(f"{where}.default_edition: expected str or null")
-    if obj["best_source"] not in _BEST_SOURCES:
+    if type(obj["best_source"]) is not str or obj["best_source"] not in _BEST_SOURCES:
         raise RegistryError(f"{where}.best_source: unknown source class")
     if not isinstance(obj["tags"], list):
         raise RegistryError(f"{where}.tags: expected array")
@@ -145,7 +145,10 @@ def _work(
         elif name == "aliases":
             fields.append((name, _aliases(value, _WORK_ALIASES, f"{where}.aliases")))
         elif name == "default_edition":
-            fields.append((name, None if value is None else _text(value, f"{where}.default_edition")))
+            fields.append((
+                name,
+                None if value is None else _text(value, f"{where}.default_edition"),
+            ))
         elif name == "tags":
             fields.append((
                 name,
