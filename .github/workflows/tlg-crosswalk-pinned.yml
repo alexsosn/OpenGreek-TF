@@ -41,7 +41,7 @@ jobs:
           git -C upstream fetch --depth 1 --filter=blob:none origin \
             338aa27310b3cfe2588a993b4d113b503597d70f
           git -C upstream checkout --detach FETCH_HEAD
-      - name: Full pinned native crosswalk reconstruction, corpus census and timing
+      - name: Full pinned native crosswalk reconstruction, independent JSON audit and timing
         shell: python
         run: |
           import json
@@ -71,16 +71,34 @@ jobs:
           }
           assert sum(not any(k == "cts" for k, _ in r.fields) for r in records) == 69
           assert sum(v == "" for r in records for _, v in r.fields) == 873
-          # Repeated mappings must not collapse under CTS/TLG lookup semantics.
-          cts = [dict(r.fields).get("cts") for r in records]
-          assert len(set(cts)) < len(cts)
+
+          # Reviewer-independent raw input audit: no converter parser reused.
+          raw = json.loads((root / "data/tlg_crosswalk.json").read_text(encoding="utf-8"))
+          assert len(raw) == 3454
+          assert sum("cts" not in row for row in raw.values()) == 69
+          assert sum("tlg" not in row for row in raw.values()) == 69
+          assert sum(row.get("tlg") == "" for row in raw.values()) == 57
+          assert sum(row.get("title") == "" for row in raw.values()) == 799
+          assert sum(row.get("author_slug") == "" for row in raw.values()) == 17
+          assert sum("\n" in row["title"] for row in raw.values()) == 4
+          assert sum("\t" in row["title"] for row in raw.values()) == 1
+          for key in ("cts", "tlg"):
+              present = [row[key] for row in raw.values() if row.get(key)]
+              assert len(present) - len(set(present)) == 13
+
           dest = Path("native-tlg-crosswalk")
           t0 = time.perf_counter()
           report = write_tlg_crosswalk_tf(root, dest)
           build_time = round(time.perf_counter() - t0, 3)
           t1 = time.perf_counter()
           assert validate_tlg_crosswalk_tf(root, dest) == report
-          assert read_tlg_crosswalk_tf(dest) == records
+          observed = read_tlg_crosswalk_tf(dest)
+          assert observed == records
+          # The source-vs-native comparison above could share parser bugs;
+          # compare again to stock-json source key/value order and exact strings.
+          assert tuple((row.identifier, row.fields) for row in observed) == tuple(
+              (identifier, tuple(fields.items())) for identifier, fields in raw.items()
+          )
           revalidate_time = round(time.perf_counter() - t1, 3)
           assert asdict(report) == {
               "records": 3454, "fields": 13848,
