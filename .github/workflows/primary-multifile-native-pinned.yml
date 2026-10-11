@@ -1,0 +1,164 @@
+name: Pinned multi-file primary Greek native TF source conservation
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/primary_materializer.py"
+      - "src/opengreek_tf/native_composer.py"
+      - "src/opengreek_tf/record_stream.py"
+      - "tests/test_primary_materializer.py"
+      - "docs/research/multifile-primary-native.md"
+      - ".github/workflows/primary-multifile-native-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-primary-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch pinned four original primary Greek source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/abydenus.fragmenta.jsonl
+          /data/corpus/achaeus.fragmenta.jsonl
+          /data/corpus/acta-barnabae.acta-barnabae.jsonl
+          /data/corpus/acta-philippi.acta-philippi.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Compose and independently verify every pinned primary Greek row
+        shell: python
+        run: |
+          import json
+          import resource
+          import time
+          from pathlib import Path
+          from tf.fabric import Fabric
+
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.primary_materializer import (
+              iter_native_primary, materialize_primary,
+          )
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.record_stream import FieldObject, FieldArray
+          from opengreek_tf.tf_integrity import native_tf_manifest
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          files = (
+              "data/corpus/abydenus.fragmenta.jsonl",
+              "data/corpus/achaeus.fragmenta.jsonl",
+              "data/corpus/acta-barnabae.acta-barnabae.jsonl",
+              "data/corpus/acta-philippi.acta-philippi.jsonl",
+          )
+          expected_counts = (6, 52, 26, 148)
+          raw_rows = []
+          expected_occurrences = []
+          for name, count in zip(files, expected_counts, strict=True):
+              source_bytes = (root / name).read_bytes()
+              lines = source_bytes.splitlines(keepends=False)
+              assert len(lines) == count
+              for ordinal, line in enumerate(lines, start=1):
+                  obj = json.loads(line.decode("utf-8"))
+                  assert type(obj) is dict and type(obj["text"]) is str
+                  assert "\\r" not in obj["text"]
+                  raw_rows.append(obj)
+                  expected_occurrences.append((name, ordinal))
+          assert len(raw_rows) == 232
+          assert sum(len(row["text"]) for row in raw_rows) == 131738
+
+          # Strict parser is independent from the separate stock-JSON source.
+          parsed = tuple(iter_native_primary(root, files))
+          assert len(parsed) == len(raw_rows)
+          assert [(r.source_file, r.ordinal) for r in parsed] == expected_occurrences
+          assert all(r.record_kind == "primary-passage" for r in parsed)
+
+          out = Path("native-primary-multifile")
+          start = time.perf_counter()
+          stats = materialize_primary(root, files, out)
+          writer_s = round(time.perf_counter() - start, 3)
+          assert stats.records == 232
+          assert stats.text_records == stats.source_atoms == 232
+          assert stats.metadata_records == 0
+          assert stats.fact_nodes > 1500
+
+          start = time.perf_counter()
+          restored = read_native_records(out)  # Independent native F/E graph
+          independent_s = round(time.perf_counter() - start, 3)
+          assert len(restored) == 232
+
+          def exact(v):
+              if isinstance(v, FieldObject):
+                  return ("object", tuple((k, exact(x)) for k, x in v.items))
+              if isinstance(v, dict):
+                  return ("object", tuple((k, exact(x)) for k, x in v.items()))
+              if isinstance(v, FieldArray):
+                  return ("array", tuple(exact(x) for x in v.items))
+              if isinstance(v, list):
+                  return ("array", tuple(exact(x) for x in v))
+              return (type(v).__name__, v)
+
+          for i, (actual, original) in enumerate(zip(restored, raw_rows, strict=True)):
+              name, physical = expected_occurrences[i]
+              assert actual.source_file == name
+              assert actual.ordinal == physical
+              assert actual.source_record_id == f"{name}:{physical}"
+              assert actual.record_kind == "primary-passage"
+              assert actual.text == original["text"]
+              assert exact(actual.fields) == exact(original)
+          api = Fabric(locations=str(out), silent="deep")
+          explored = api.explore(silent="deep")
+          assert explored and "has_fact" in explored["edges"]
+          exposed = " ".join(sorted(set(explored["nodes"]) | set(explored["edges"])))
+          tf = api.load(exposed, silent="deep")
+          assert tf
+          assert len(tf.F.otype.s("passage")) == 232
+          assert len(tf.F.otype.s("sourceFact")) == stats.fact_nodes
+          assert not tf.F.otype.s("word") and not tf.F.otype.s("metadataRecord")
+          assert [tf.F.source_seq.v(n) for n in tf.F.otype.s("passage")] == list(range(1, 233))
+          assert sum(len(tf.E.has_fact.f(n)) for n in tf.F.otype.s("passage")) + sum(
+              len(tf.E.has_fact.f(n)) for n in tf.F.otype.s("sourceFact")
+          ) == stats.fact_nodes
+          assert [
+              tf.T.text(node, fmt="text-orig-full") for node in tf.F.otype.s("passage")
+          ] == [row["text"] for row in raw_rows]
+
+          manifest = native_tf_manifest(out)
+          assert manifest.tf_file_count >= 17
+          print(json.dumps({
+              "pinned_primary_multifile": "PASS",
+              "source_files": len(files),
+              "original_passage_rows": len(raw_rows),
+              "source_unicode_characters": sum(len(row["text"]) for row in raw_rows),
+              "source_fact_nodes": stats.fact_nodes,
+              "tf_source_atoms": stats.source_atoms,
+              "tf_output_bytes": manifest.output_bytes,
+              "canonical_sha256": manifest.canonical_sha256,
+              "writer_and_own_validation_seconds": writer_s,
+              "separate_loaded_verification_seconds": independent_s,
+              "whole_process_peak_rss_mib": round(
+                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1
+              ),
+          }, sort_keys=True))
