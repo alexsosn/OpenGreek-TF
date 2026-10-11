@@ -25,7 +25,7 @@ class NativeTfManifest:
     canonical_sha256: str
 
 
-_DATE = re.compile(rb"@dateWritten=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+_DATE = re.compile(rb"@dateWritten=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\+00:00)?Z")
 
 
 def _canonical_payload(name: str, payload: bytes) -> bytes:
