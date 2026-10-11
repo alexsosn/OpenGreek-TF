@@ -169,3 +169,51 @@ def test_rejects_existing_destination(source_root: Path, tmp_path: Path) -> None
     occupied.mkdir()
     with pytest.raises(WorkAuthorityError):
         write_work_authority_tf(source_root, occupied)
+
+
+def test_groups_with_no_works_remain_genuine_native_source_atoms(
+    source_root: Path, tmp_path: Path,
+) -> None:
+    """No inferred work content, even if *every* TLG parent is empty."""
+    path = source_root / "data" / "work_authority.json"
+    path.write_text(
+        json.dumps({"tlg0001": [], "tlg0002": []}), encoding="utf-8",
+    )
+    output = tmp_path / "empty-groups"
+    report = write_work_authority_tf(source_root, output)
+    assert report == WorkAuthorityStats(
+        groups=2, works=0, fields=0, array_items=0, source_atoms=2,
+    )
+    assert read_work_authority_tf(output) == parse_work_authority(source_root)
+    assert not (output / "authority_work_index.tf").exists()
+    assert not (output / "has_authority_work.tf").exists()
+
+
+def test_scalar_only_work_descriptions_do_not_create_array_or_numeric_features(
+    source_root: Path, tmp_path: Path,
+) -> None:
+    path = source_root / "data" / "work_authority.json"
+    path.write_text(
+        json.dumps({"tlg0001": [{"label": "Work", "qid": "Q5"}]}),
+        encoding="utf-8",
+    )
+    output = tmp_path / "scalars-only"
+    report = write_work_authority_tf(source_root, output)
+    assert report == WorkAuthorityStats(
+        groups=1, works=1, fields=2, array_items=0, source_atoms=2,
+    )
+    assert read_work_authority_tf(output) == parse_work_authority(source_root)
+    assert not (output / "authority_item_position.tf").exists()
+    assert not (output / "has_authority_item.tf").exists()
+    assert not (output / "authority_int.tf").exists()
+
+
+def test_reject_invalid_tlg_parent_before_creating_native_dataset(
+    source_root: Path, tmp_path: Path,
+) -> None:
+    path = source_root / "data" / "work_authority.json"
+    path.write_text(json.dumps({"oga000001": []}), encoding="utf-8")
+    output = tmp_path / "invalid"
+    with pytest.raises(WorkAuthorityError):
+        write_work_authority_tf(source_root, output)
+    assert not output.exists()
