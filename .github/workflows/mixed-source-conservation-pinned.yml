@@ -1,0 +1,145 @@
+name: Pinned independently validated mixed original JSONL and native TF
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/jsonl_conservation.py"
+      - "tests/test_jsonl_conservation.py"
+      - "docs/research/independent-mixed-source-validation.md"
+      - ".github/workflows/mixed-source-conservation-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  independent-original-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch immutable original primary, witness and paratext source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/abydenus.fragmenta.jsonl
+          /data/corpus_secondary/abydenus.fragmenta.jsonl
+          /data/paratext/edition_apparatus.jsonl
+          /data/paratext/latin_in_greek_script.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Compare every original JSONL fact to one independently loaded native TF
+        shell: python
+        run: |
+          import json
+          import resource
+          import time
+          from dataclasses import asdict
+          from pathlib import Path
+          from tf.fabric import Fabric
+
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.native_composer import write_native_records
+          from opengreek_tf.primary_materializer import iter_native_primary
+          from opengreek_tf.unaligned_materializer import iter_native_unaligned
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.tf_integrity import native_tf_manifest
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          original_files = (
+              "data/corpus/abydenus.fragmenta.jsonl",
+              "data/corpus_secondary/abydenus.fragmenta.jsonl",
+              "data/paratext/edition_apparatus.jsonl",
+              "data/paratext/latin_in_greek_script.jsonl",
+          )
+          expected_counts = (6, 47, 56, 57)
+          for file, expected in zip(original_files, expected_counts, strict=True):
+              assert len((root / file).read_bytes().splitlines()) == expected
+          # Generator composition is for building only, NEVER used in the
+          # independent verifier's stock-json/source occurrence comparison.
+          rows = (
+              *iter_native_primary(root, original_files[:1]),
+              *iter_native_unaligned(root, original_files[1:]),
+          )
+          assert len(rows) == 166
+          out = Path("native-mixed-originals")
+          start = time.perf_counter()
+          native = write_native_records(tuple(rows), out)
+          build_seconds = round(time.perf_counter() - start, 3)
+          assert native.records == native.source_atoms == 166
+          assert native.text_records == 6 and native.metadata_records == 160
+
+          start = time.perf_counter()
+          report = validate_native_jsonl_sources(root, original_files, out)
+          verify_seconds = round(time.perf_counter() - start, 3)
+          assert report.source_files == 4
+          assert report.records == 166
+          assert report.primary_passages == 6
+          assert report.secondary_witnesses == 47
+          assert report.paratext_records == 113
+          assert report.source_fact_nodes == native.fact_nodes
+          assert len(report.original_source_sha256) == 64
+
+          fabric = Fabric(locations=str(out), silent="deep")
+          declared = fabric.explore(silent="deep")
+          assert declared and "has_fact" in declared["edges"]
+          assert "has_alignment" not in declared["edges"]
+          api = fabric.load(
+              " ".join(sorted(set(declared["nodes"]) | set(declared["edges"]))),
+              silent="deep",
+          )
+          assert api
+          assert len(api.F.otype.s("passage")) == 6
+          assert len(api.F.otype.s("metadataRecord")) == 160
+          assert len(api.F.otype.s("sourceFact")) == native.fact_nodes
+          assert not api.F.otype.s("word")
+          assert [api.F.record_kind.v(n) for n in api.F.otype.s("passage")] == [
+              "primary-passage"
+          ] * 6
+          assert [api.F.record_kind.v(n) for n in api.F.otype.s("metadataRecord")] == (
+              ["secondary-witness"] * 47 + ["paratext-record"] * 113
+          )
+          assert sum(len(api.E.has_fact.f(n)) for n in (
+              *api.F.otype.s("passage"), *api.F.otype.s("metadataRecord"),
+              *api.F.otype.s("sourceFact"),
+          )) == native.fact_nodes
+          assert len(api.F.otype.s("atom")) > native.source_atoms
+          manifest = native_tf_manifest(out)
+          assert manifest.tf_file_count >= 16
+
+          # Independent second native compilation: identical source content,
+          # regardless of Text-Fabric's volatile @dateWritten headers.
+          again = Path("native-mixed-originals-repeat")
+          write_native_records(tuple(rows), again)
+          assert native_tf_manifest(again).canonical_sha256 == manifest.canonical_sha256
+          print(json.dumps({
+              "independent_mixed_original_source": "PASS",
+              **asdict(report),
+              "native_facts": native.fact_nodes,
+              "native_output_bytes": manifest.output_bytes,
+              "canonical_tf_sha256": manifest.canonical_sha256,
+              "build_seconds": build_seconds,
+              "independent_source_verification_seconds": verify_seconds,
+              "whole_process_peak_rss_mib": round(
+                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1
+              ),
+          }, sort_keys=True))
