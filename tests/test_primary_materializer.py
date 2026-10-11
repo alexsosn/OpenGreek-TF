@@ -140,3 +140,20 @@ def test_identical_input_has_deterministic_native_feature_contents(
     assert native_tf_manifest(p).canonical_sha256 == (
         native_tf_manifest(q).canonical_sha256
     )
+
+
+def test_reject_resolved_duplicate_primary_files_through_symlink_alias(
+    source: Path, tmp_path: Path,
+) -> None:
+    original = source / "data/corpus/a.jsonl"
+    alias = source / "data/corpus/alias.jsonl"
+    try:
+        alias.symlink_to(original)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink setup unavailable on this platform: {exc}")
+    out = tmp_path / "duplicate-alias"
+    with pytest.raises(ValueError, match="duplicate"):
+        materialize_primary(
+            source, ("data/corpus/a.jsonl", "data/corpus/alias.jsonl"), out,
+        )
+    assert not out.exists()
