@@ -5,7 +5,9 @@ on:
     paths:
       - "src/opengreek_tf/cr_codepoint_probe.py"
       - "tests/test_cr_codepoint_probe.py"
+      - "tests/test_cr_graph_surface.py"
       - "docs/research/native-cr-codepoint-atoms.md"
+      - "docs/research/cr-native-graph-surface.md"
       - ".github/workflows/cr-codepoint-pinned.yml"
   workflow_dispatch:
 
