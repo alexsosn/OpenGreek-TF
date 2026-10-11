@@ -18,6 +18,7 @@ def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
     if not relative_files:
         raise ValueError("no primary JSONL source files selected")
     visited: set[str] = set()
+    physical_files: set[Path] = set()
     source_root = root.resolve()
     for relative in relative_files:
         if type(relative) is not str:
@@ -34,8 +35,12 @@ def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
         if relative in visited:
             raise ValueError(f"duplicate selected primary source file: {relative}")
         visited.add(relative)
-        if not (root / relative).resolve().is_relative_to(source_root):
+        resolved = (root / relative).resolve()
+        if not resolved.is_relative_to(source_root):
             raise ValueError(f"primary source file escapes source root: {relative}")
+        if resolved in physical_files:
+            raise ValueError(f"duplicate selected physical primary source file: {relative}")
+        physical_files.add(resolved)
 
 
 def iter_native_primary(
