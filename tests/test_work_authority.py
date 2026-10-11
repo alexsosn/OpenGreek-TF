@@ -24,7 +24,7 @@ from opengreek_tf.work_authority import (
 def source_root(tmp_path: Path) -> Path:
     root = tmp_path / "upstream"
     data = root / "data"
-    data.mkdir()
+    data.mkdir(parents=True)
     (data / "work_authority.json").write_text(
         json.dumps(
             {
