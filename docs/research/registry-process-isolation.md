@@ -1,0 +1,18 @@
+# #52 — Independent process isolation for pinned TF scale validation
+
+## Research / observed root cause
+
+OpenGreek-TF's [merged PR #53](https://github.com/alexsosn/OpenGreek-TF/pull/53) retains the complete source-native Text-Fabric conservation guarantees, while reducing transient FactGraph retention. But [full pinned Actions #38139140044](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38139140044) still peaked at ~1,243.8 MiB in one Python process even though the writer's after-validation *live* RSS snapshot was ~856.7 MiB.
+
+Direct investigation of `.github/workflows/full-registry-native-scale.yml` reveals the CI process: (i) parse full upstream standard JSON for ground truth; (ii) `materialize_registry` parses *another* complete typed registry, builds native TF and independently `Fabric.load`-verifies; (iii) load and restore native TF a second time; (iv) `Fabric.load` the whole feature inventory *yet again* to check edge counts/otype. Thus the measured 1.24 GiB **does not isolate** the intrinsic composer from the test harness's extra memory. It is irresponsible to claim true production bounded-memory behavior before factoring these costs.
+
+## Plan and test gates
+
+1. **RED-first:** subprocess integration tests against a real schema-complete 2-author/1-work registry source, preserving ordered nested edition facts, nulls and Unicode. Assert child PID differs from parent, report measured child peak RSS and lifecycle snapshots, output native TF equals independent parent `read_native_records` and its canonical feature SHA-256. Repeat across separate child runs to prove semantic stability. Assert bad late source and existing output fail without partial overwrite; paths with spaces are supported.
+2. Implement one small **source-exact CLI child adapter**, not a new TF serializer. Child imports the merged strict `registry_materializer.materialize_registry`, outputs one JSON report with stats, wall time, `resource.ru_maxrss` and `/proc/self/status` live phase RSS; reports canonical TF feature manifest from the *same* native output. Parent `run_isolated_registry_build` starts the module through `sys.executable, "-m"` using explicit argument array (no shell/interpolated user input), requires successful exit and valid report.
+3. Modify the pinned 14,390-record GitHub Actions workflow to run the child builder **before** independently reconstructing the entire native graph in the parent verifier, retaining every existing source-grounded, type-sensitive/order-sensitive assertion, TF loaded edge/node census, 12,735 explicit nulls, and pinned canonical SHA `6dec2456986793999f8f1fe98408d00a8c4c73c98e6c066b6c8f24e0aa57565e`. Log **child builder maxrss** and **independent verifier maxrss** separately; do not call the lower maximum the writer's memory limit, since the original peak included a mixed process.
+4. Require original pinned **mixed Greek passage plus metadata** workflow, plus full mypy/Ruff/pytest and exact-head independent skeptical code/data review; address findings before merge. Include actual full-registry output size and count constraints. Keep #52, #13, #6 and #9 OPEN for primary corpus scale, true bounded-memory streaming and production validation.
+
+## Interpretation boundary
+
+A smaller maximum of isolated child/parent process peaks demonstrates that the **validation orchestration** need not retain all phases simultaneously. It does **not** prove a Text-Fabric streaming writer, lower intrinsic native TF F/E assembly peak, or the capability to materialize 65 million Greek tokens in bounded memory. All output data remain native TF; no lossy JSON metadata sidecar is introduced. The JSON process report contains only metrics, not corpus content.
