@@ -107,7 +107,7 @@ def test_reader_rejects_forged_config_feature(tmp_path: Path) -> None:
 
 
 def test_reader_rejects_forged_native_text_rendering_config(tmp_path: Path) -> None:
-    from tf.fabric import Fabric  # type: ignore[import-untyped]
+    from tf.fabric import Fabric
 
     out = tmp_path / "native"
     original = "ἀνήρ\rλόγος"
@@ -133,7 +133,7 @@ def test_reader_rejects_forged_native_text_rendering_config(tmp_path: Path) -> N
 
 
 def test_reader_rejects_additional_forged_text_format(tmp_path: Path) -> None:
-    from tf.fabric import Fabric  # type: ignore[import-untyped]
+    from tf.fabric import Fabric
 
     out = tmp_path / "native"
     original = "λόγος\rἄλλος"
