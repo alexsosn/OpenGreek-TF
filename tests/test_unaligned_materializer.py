@@ -185,3 +185,33 @@ def test_canonical_feature_graph_independent_of_generated_timestamps(
     assert native_tf_manifest(p).canonical_sha256 == (
         native_tf_manifest(q).canonical_sha256
     )
+
+
+def test_rejects_hardlink_alias_of_same_physical_source_file(
+    root: Path, tmp_path: Path,
+) -> None:
+    original = root / FILES[0]
+    alias = root / "data/corpus_secondary/hardlink.jsonl"
+    try:
+        alias.hardlink_to(original)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"hard links unsupported: {exc}")
+    assert alias.resolve() != original.resolve()
+    assert alias.stat().st_ino == original.stat().st_ino
+    output = tmp_path / "hardlink"
+    with pytest.raises(ValueError, match="duplicate"):
+        materialize_unaligned(
+            root, (FILES[0], "data/corpus_secondary/hardlink.jsonl"), output,
+        )
+    assert not output.exists()
+
+
+def test_nonexistent_source_file_fails_before_any_native_output(
+    root: Path, tmp_path: Path,
+) -> None:
+    destination = tmp_path / "missing"
+    with pytest.raises(ValueError, match="source"):
+        materialize_unaligned(
+            root, (FILES[0], "data/paratext/absent.jsonl"), destination,
+        )
+    assert not destination.exists()
