@@ -1,0 +1,118 @@
+name: Pinned grouped TLG work-authority native TF conservation
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/work_authority.py"
+      - "tests/test_work_authority.py"
+      - "docs/research/work-authority-native-tf.md"
+      - ".github/workflows/work-authority-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  work-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch immutable Open Greek work authority and release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/work_authority.json
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Independently load every parent and ordered TLG work authority fact
+        shell: python
+        run: |
+          import json
+          import time
+          from collections import Counter
+          from dataclasses import asdict
+          from pathlib import Path
+
+          from tf.fabric import Fabric
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.work_authority import (
+              parse_work_authority, read_work_authority_tf,
+              validate_work_authority_tf, write_work_authority_tf,
+          )
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          groups = parse_work_authority(root)
+          works = tuple(w for g in groups for w in g.works)
+          assert len(groups) == 585
+          assert len(works) == 4062
+          field_counts = Counter(name for w in works for name, _value in w.fields)
+          assert dict(field_counts) == {
+              "alts": 2035, "la": 2114, "label": 4062,
+              "langs": 3446, "qid": 4062, "el": 736,
+              "genres": 1676, "grc": 649, "year": 1057,
+          }
+          qids = [dict(w.fields)["qid"] for w in works]
+          assert len(qids) - len(set(qids)) == 58
+          expected_items = sum(
+              len(value) for w in works for _name, value in w.fields
+              if isinstance(value, tuple)
+          )
+          assert expected_items == 10401
+          assert max(len(g.works) for g in groups) == 566
+          output = Path("native-work-authority")
+          t0 = time.perf_counter()
+          report = write_work_authority_tf(root, output)
+          build_seconds = round(time.perf_counter() - t0, 3)
+          t1 = time.perf_counter()
+          assert validate_work_authority_tf(root, output) == report
+          validate_seconds = round(time.perf_counter() - t1, 3)
+          assert read_work_authority_tf(output) == groups
+          assert asdict(report) == {
+              "groups": 585, "works": 4062,
+              "fields": 19837, "array_items": 10401,
+              "source_atoms": 4647,
+          }
+          api = Fabric(locations=str(output), silent="deep").load(
+              "atom_kind source_file source_record_id source_ordinal "
+              "authority_group_id authority_work_index authority_key "
+              "authority_position authority_kind authority_text authority_int "
+              "authority_item_position has_authority_work has_authority_field "
+              "has_authority_item", silent="deep",
+          )
+          assert api
+          assert len(api.F.otype.s("atom")) == 4647
+          assert len(api.F.otype.s("workAuthorityGroup")) == 585
+          assert len(api.F.otype.s("workAuthority")) == 4062
+          assert len(api.F.otype.s("workAuthorityField")) == 19837
+          assert len(api.F.otype.s("workAuthorityItem")) == 10401
+          assert not api.F.otype.s("word")
+          assert not api.F.otype.s("passage")
+          assert not (output / "form.tf").exists()
+          print(json.dumps({
+              "source": "pinned work_authority.json",
+              "grouped_work_authority_conservation": "PASS",
+              **asdict(report),
+              "build_plus_validation_seconds": build_seconds,
+              "second_validation_seconds": validate_seconds,
+              "native_tf_bytes": sum(p.stat().st_size for p in output.glob("*.tf")),
+          }, sort_keys=True))
