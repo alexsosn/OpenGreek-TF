@@ -24,7 +24,9 @@ def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
     if not relative_files:
         raise ValueError("no secondary or paratext source files selected")
     seen_files: set[str] = set()
-    physical_files: set[Path] = set()
+    # Resolve symbolic aliases *and* compare inode identities so hardlinks
+    # cannot double count one physical original source under two names.
+    physical_files: set[tuple[int, int]] = set()
     source_root = root.resolve()
     for relative in relative_files:
         if type(relative) is not str:
@@ -45,9 +47,16 @@ def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
         physical = (root / relative).resolve()
         if not physical.is_relative_to(source_root):
             raise ValueError(f"unaligned source file escapes source root: {relative}")
-        if physical in physical_files:
+        try:
+            if not physical.is_file():
+                raise ValueError(f"unaligned source is not a regular file: {relative}")
+            identity = physical.stat()
+        except OSError as exc:
+            raise ValueError(f"unaligned source file cannot be read: {relative}") from exc
+        key = (identity.st_dev, identity.st_ino)
+        if key in physical_files:
             raise ValueError(f"duplicate physical unaligned source file: {relative}")
-        physical_files.add(physical)
+        physical_files.add(key)
 
 
 def iter_native_unaligned(
