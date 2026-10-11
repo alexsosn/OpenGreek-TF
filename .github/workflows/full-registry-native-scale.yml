@@ -1,0 +1,163 @@
+name: Pinned complete source registry native TF scale gate
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/registry_materializer.py"
+      - "src/opengreek_tf/native_composer.py"
+      - "tests/test_registry_materializer.py"
+      - "docs/research/full-registry-native-scale.md"
+      - ".github/workflows/full-registry-native-scale.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-native-registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch exact pinned upstream registry and release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/source_registry.json
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Materialize and independently conserve all 14,390 native registry records
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import resource
+          import time
+          from dataclasses import asdict
+          from pathlib import Path
+          from tf.fabric import Fabric
+
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.registry_materializer import materialize_registry
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.record_stream import FieldObject, FieldArray
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          raw_file = root / "data/source_registry.json"
+          raw = json.loads(raw_file.read_text(encoding="utf-8"))
+          assert set(raw) == {"authors", "works"}
+          assert len(raw["authors"]) == 3315
+          assert len(raw["works"]) == 11075
+          assert sum(len(w["editions"]) for w in raw["works"].values()) == 10202
+          assert sum(len(w["tags"]) for w in raw["works"].values()) == 23254
+          assert sum(w["default_edition"] is None for w in raw["works"].values()) == 8158
+          assert sum(e["year"] is None for w in raw["works"].values()
+                     for e in w["editions"].values()) == 4577
+          assert all(w["author"] in raw["authors"] for w in raw["works"].values())
+
+          out = Path("native-full-registry")
+          t0 = time.perf_counter()
+          stats = materialize_registry(root, out)
+          build_and_writer_check_s = round(time.perf_counter() - t0, 3)
+          assert stats.records == 14390
+          assert stats.metadata_records == stats.source_atoms == 14390
+          assert stats.text_records == 0
+          assert stats.fact_nodes == 252276
+
+          t1 = time.perf_counter()
+          restored = read_native_records(out)  # Independent Fabric graph loader
+          reload_s = round(time.perf_counter() - t1, 3)
+          assert len(restored) == 14390
+
+          def exact(item):
+              # Unlike dict equality, keeps nested source member ORDER and
+              # distinguishes False from integer 0, null from missing.
+              if isinstance(item, FieldObject):
+                  return ("object", tuple((key, exact(v)) for key, v in item.items))
+              if isinstance(item, dict):
+                  return ("object", tuple((key, exact(v)) for key, v in item.items()))
+              if isinstance(item, FieldArray):
+                  return ("array", tuple(exact(v) for v in item.items))
+              if isinstance(item, list):
+                  return ("array", tuple(exact(v) for v in item))
+              return (type(item).__name__, item)
+
+          expected = (
+              [("author", name, fields) for name, fields in raw["authors"].items()]
+              + [("work", name, fields) for name, fields in raw["works"].items()]
+          )
+          null_count = 0
+          for i, (record, (kind, slug, fields)) in enumerate(zip(restored, expected, strict=True), 1):
+              family = kind + "s"
+              ordinal = i if kind == "author" else i - 3315
+              assert record.source_file == f"data/source_registry.json#{family}"
+              assert record.ordinal == ordinal
+              assert record.record_kind == f"registry-{kind}"
+              assert record.source_record_id == slug
+              assert record.text is None
+              assert exact(record.fields) == exact(fields)
+              if kind == "work":
+                  null_count += record.fields.require("default_edition") is None
+                  edition_map = record.fields.require("editions")
+                  assert isinstance(edition_map, FieldObject)
+                  for _, ed in edition_map.items:
+                      assert isinstance(ed, FieldObject)
+                      null_count += ed.require("year") is None
+          assert null_count == 12735
+
+          fabric = Fabric(locations=str(out), silent="deep")
+          discovered = fabric.explore(silent="deep")
+          assert discovered and "has_fact" in discovered["edges"]
+          features = sorted(set(discovered["nodes"]) | set(discovered["edges"]))
+          api = fabric.load(" ".join(features), silent="deep")
+          assert api
+          roots = api.F.otype.s("metadataRecord")
+          assert len(roots) == 14390
+          assert len(api.F.otype.s("sourceFact")) == 252276
+          assert len(api.F.otype.s("atom")) == 14390
+          assert not api.F.otype.s("passage") and not api.F.otype.s("word")
+          assert [api.F.source_seq.v(n) for n in roots] == list(range(1, 14391))
+          edge_count = sum(len(api.E.has_fact.f(n)) for n in roots)
+          edge_count += sum(len(api.E.has_fact.f(n)) for n in api.F.otype.s("sourceFact"))
+          assert edge_count == 252276
+
+          tf_files = sorted(out.glob("*.tf"))
+          assert tf_files and not (out / "word.tf").exists()
+          output_bytes = sum(f.stat().st_size for f in tf_files)
+          # A digest records this specific output; no second copy is written.
+          digest = hashlib.sha256()
+          for path in tf_files:
+              digest.update(path.name.encode("utf-8") + b"\\0")
+              digest.update(hashlib.sha256(path.read_bytes()).digest())
+          print(json.dumps({
+              "full_registry_native_tf": "PASS",
+              **asdict(stats),
+              "aliases_and_edition_year_nulls": null_count,
+              "source_bytes": raw_file.stat().st_size,
+              "native_tf_bytes": output_bytes,
+              "tf_file_count": len(tf_files),
+              "has_fact_edges": edge_count,
+              "build_and_writer_validation_seconds": build_and_writer_check_s,
+              "independent_reload_seconds": reload_s,
+              "peak_rss_mib": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
+              "sha256_feature_manifest": digest.hexdigest(),
+          }, sort_keys=True))
