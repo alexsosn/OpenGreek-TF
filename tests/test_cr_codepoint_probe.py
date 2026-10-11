@@ -51,7 +51,10 @@ def test_native_integer_cr_atom_roundtrips_exact_unicode_without_fake_words(
     assert api.F.otype.s("word") == ()
     assert len(api.F.otype.s("passage")) == 1
     assert len(api.F.otype.s("atom")) == recovered.text_slot_count + raw.count("\r") + 1
-    assert sum(api.F.codepoint.v(s) == 13 for s in api.F.otype.s("atom")) == raw.count("\r")
+    assert (
+        sum(api.F.codepoint.v(s) == 13 for s in api.F.otype.s("atom"))
+        if (out / "codepoint.tf").is_file() else 0
+    ) == raw.count("\r")
     assert all(p.suffix == ".tf" for p in out.iterdir() if p.is_file())
 
 
