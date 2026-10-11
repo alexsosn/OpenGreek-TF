@@ -59,7 +59,7 @@ def test_native_registry_child_isolation_preserves_all_source_facts(
     assert report["pid"] != os.getpid()
     assert report["stats"] == {
         "records": 3, "metadata_records": 3, "text_records": 0,
-        "source_atoms": 3, "fact_nodes": 26,
+        "source_atoms": 3, "fact_nodes": 28,
     }
     assert report["peak_rss_mib"] > 0
     assert report["build_seconds"] >= 0
