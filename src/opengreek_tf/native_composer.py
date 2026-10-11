@@ -175,7 +175,7 @@ def write_native_records(
                         raise NativeComposeError("invalid source string scalar")
                     values["fact_text"] = fact.value
                 if fact.kind in {"int", "bool"}:
-                    if type(fact.value) not in (int, bool):
+                    if not isinstance(fact.value, (int, bool)):
                         raise NativeComposeError("invalid source numeric scalar")
                     values["fact_int"] = int(fact.value)
                 cv.feature(handle, **values)
