@@ -104,3 +104,28 @@ def test_reader_rejects_forged_config_feature(tmp_path: Path) -> None:
     shutil.copyfile(out / "otext.tf", out / "untrusted_format.tf")
     with pytest.raises(CRCodepointError, match="unexpected.*feature"):
         read_cr_codepoint_probe(out)
+
+
+def test_reader_rejects_forged_native_text_rendering_config(tmp_path: Path) -> None:
+    from tf.fabric import Fabric  # type: ignore[import-untyped]
+
+    out = tmp_path / "native"
+    original = "ἀνήρ\\rλόγος"
+    write_cr_codepoint_probe(
+        original, out,
+        source_file="data/corpus/greek.jsonl", source_ordinal=7,
+    )
+    assert read_cr_codepoint_probe(out).text == original
+    # This is an *allowed* config feature name but rewrites the native
+    # researcher-facing text recipe to render the file name as Greek text.
+    fabric = Fabric(locations=str(out), silent="deep")
+    assert fabric.save(
+        metaData={"otext": {
+            "sectionTypes": "passage",
+            "sectionFeatures": "locus",
+            "fmt:text-orig-full": "{source_file}",
+        }},
+        silent="deep",
+    )
+    with pytest.raises(CRCodepointError, match="rendering|otext"):
+        read_cr_codepoint_probe(out)
