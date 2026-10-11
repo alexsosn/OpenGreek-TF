@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import opengreek_tf.native_composer as composer
+from opengreek_tf.fact_graph import FactGraph
 from opengreek_tf.native_composer import (
     NativeRecord,
     NativeStats,
@@ -51,7 +52,7 @@ def test_writer_preflights_once_but_retains_full_loaded_validation(
     calls = 0
     original = composer._preflight
 
-    def tracked(value: tuple[NativeRecord, ...]) -> tuple[composer.FactGraph, ...]:
+    def tracked(value: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
         nonlocal calls
         calls += 1
         return original(value)
