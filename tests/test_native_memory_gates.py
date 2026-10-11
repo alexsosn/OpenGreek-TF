@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import weakref
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 import opengreek_tf.native_composer as composer
 from opengreek_tf.fact_graph import FactGraph
 from opengreek_tf.native_composer import (
+    NativeComposeError,
     NativeRecord,
     NativeStats,
     read_native_records,
@@ -136,3 +138,33 @@ def test_writer_releases_preflight_graphs_before_independent_fabric_load(
     out = tmp_path / "native"
     assert write_native_records(records, out).records == 2
     assert original_reader(out) == records
+
+
+def test_postwrite_conservation_rejects_bool_int_equal_values(
+    tmp_path: Path,
+    records: tuple[NativeRecord, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_reader = composer.read_native_records
+    original_fields = records[0].fields
+    forged_fields = FieldObject(tuple(
+        (key, 0 if key == "available" else value)
+        for key, value in original_fields.items
+    ))
+    # This exposes the exact typed-integrity bug in native dataclass equality.
+    assert forged_fields == original_fields
+    assert type(forged_fields.require("available")) is int
+    assert type(original_fields.require("available")) is bool
+
+    def forged_loader(path: Path) -> tuple[NativeRecord, ...]:
+        loaded = original_reader(path)
+        return (replace(loaded[0], fields=forged_fields), *loaded[1:])
+
+    monkeypatch.setattr(composer, "read_native_records", forged_loader)
+    out = tmp_path / "forged"
+    with pytest.raises(NativeComposeError, match="conservation"):
+        write_native_records(records, out)
+    assert out.exists()
+    # The public independent validator must also reject the same forged data.
+    with pytest.raises(NativeComposeError, match="conservation"):
+        validate_native_records(records, out)
