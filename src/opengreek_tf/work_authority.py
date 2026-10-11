@@ -341,7 +341,10 @@ def read_work_authority_tf(destination: Path) -> tuple[WorkGroup, ...]:
                     value: WorkFieldValue = api.F.authority_text.v(field)
                     if type(value) is not str or "\r" in value:
                         raise WorkAuthorityError("invalid native source string value")
-                elif field_kind == "int" and field_key in _INT_KEYS and has_ints and not linked_items:
+                elif (
+                    field_kind == "int" and field_key in _INT_KEYS
+                    and has_ints and not linked_items
+                ):
                     value = api.F.authority_int.v(field)
                     if type(value) is not int:
                         raise WorkAuthorityError("missing native integer year")
