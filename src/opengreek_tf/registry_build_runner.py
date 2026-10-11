@@ -119,7 +119,9 @@ def run_isolated_registry_build(root: Path, destination: Path) -> dict[str, Any]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build exact source registry in isolated native TF")
+    parser = argparse.ArgumentParser(
+        description="Build exact source registry in isolated native TF"
+    )
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--destination", type=Path, required=True)
     args = parser.parse_args()
