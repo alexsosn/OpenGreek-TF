@@ -15,3 +15,10 @@
 ## Boundaries
 
 This is a **mixed-source subset** conservation validator, not the still-unbuilt complete 1,970,947 primary rows or a release certificate. No new authority/CTS equivalence or syntactic tokens. #9 remains open until full source snapshot and release coverage are proven; #3, #6, #8, #13 and #29 still have unresolved requirements.
+
+
+## First measured original-source validation
+
+The first full pinned real-source workflow [Actions #38156896348](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38156896348) passed with **166 original source occurrences** (6 primary Greek passages, 47 unaligned secondary witnesses and 113 paratext rows), **1,670 independently counted original nested facts**, **85,418 source Unicode codepoints** (including secondary and paratext strings), **308,843 serialized native TF bytes**, canonical native feature SHA-256 `a99cf3553ae0346c429f6f788adb499c132a7cef3dd1d22f5d48c289a8aa4315`, and whole-process peak RSS **148.4 MiB** on that runner. All 166 originals were compared to independently loaded native F/E and the exact source occurrence and nonaligned family semantics, and the second composition reproduced the canonical digest. These are selected-source measurements, **not** whole-corpus validation or a memory limit.
+
+Independent skeptical review found a fail-open manifest edge case: adding an **empty** selected original JSONL file after valid files could have increased `source_files` while comparing zero additional original occurrences. A RED regression and explicit per-file nonempty validation now reject this. Further adversarial tests delete the native `has_fact.tf` edge file and substitute original `False`↔integer `0`, fields, rows or ordering; the public validator reports `JsonlConservationError` rather than accepting superficially equal Python values. The existing native graph loader independently verifies every loaded F/E fact ownership, digest, text slot and queryable original Greek `T.text`.
