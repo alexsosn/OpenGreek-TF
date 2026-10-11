@@ -288,3 +288,66 @@ def test_release_succeeds_even_when_own_pr_remains_open(
     assert code == 0
     assert report["released"] is True
     assert report["remaining_preflight"]["allowed"] is False
+
+
+
+def test_live_advisory_claim_header_followed_by_research_plan_blocks_other_loop() -> None:
+    """GitHub issue #6/#9/#52 real-world format: claim marker + Markdown plan."""
+    comment = _comment(801, "alice-working-issue37", user="alice")
+    comment["body"] += (
+        "\n\n**Research / plan**\n"
+        "Read pinned source and open PRs before branching.\n"
+        "- RED tests first\n- independent adversarial review\n"
+    )
+    competing = assess(37, "open", [], [comment], NOW,
+                       token="bob-working-issue37", actor="bob")
+    assert not competing.allowed
+    assert competing.winning_claim is not None
+    assert competing.winning_claim.author == "alice"
+    assert competing.winning_claim.comment_id == 801
+    owner = assess(37, "open", [], [comment], NOW,
+                   token="alice-working-issue37", actor="alice")
+    assert owner.allowed
+    assert owner.winning_claim == competing.winning_claim
+
+
+def test_multiline_claim_race_oldest_live_header_wins() -> None:
+    first = _comment(801, "alice-working", user="alice")
+    second = _comment(802, "bob-working", user="bob")
+    first["body"] += "\n\n### Research\nThis claim is active."
+    second["body"] += "\n\n### Research\nAnother worker planning the same ticket."
+    for comments in ([second, first], [first, second]):
+        lost = assess(37, "open", [], comments, NOW,
+                      token="bob-working", actor="bob")
+        assert not lost.allowed
+        assert lost.winning_claim and lost.winning_claim.comment_id == 801
+
+
+@pytest.mark.parametrize("prefix", [
+    "Some preceding text\n",
+    "> ",
+    "```markdown\n",
+    "## Research\n\n",
+])
+def test_claim_marker_is_not_recognized_when_buried_or_quoted(prefix: str) -> None:
+    comment = _comment(803, "buried-token")
+    comment["body"] = prefix + comment["body"] + "\n\nResearch follows"
+    result = assess(37, "open", [], [comment], NOW)
+    assert result.allowed and result.winning_claim is None
+
+
+def test_duplicate_claim_markers_in_one_comment_are_not_lease_authority() -> None:
+    first = _comment(804, "alice-one")
+    second = _comment(805, "bob-two", user="bob")
+    first["body"] += "\n\n" + second["body"]
+    result = assess(37, "open", [], [first], NOW)
+    assert result.allowed and result.winning_claim is None
+
+
+def test_prose_does_not_extend_expired_or_excessively_long_lease() -> None:
+    old = _comment(806, "stale-token", minutes_ago=35, lease_minutes=20)
+    old["body"] += "\n\n**Plan:** actively working in code."
+    overlong = _comment(807, "overlong-token", lease_minutes=240)
+    overlong["body"] += "\n\n**Plan:** long task; manual four-hour header."
+    outcome = assess(37, "open", [], [old, overlong], NOW)
+    assert outcome.allowed and outcome.winning_claim is None
