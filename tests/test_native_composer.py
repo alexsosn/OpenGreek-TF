@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -195,4 +196,44 @@ def test_reject_orphan_or_unexpected_metadata_fact(
     # Corrupted relationship layer cannot silently pass the independent reader.
     p.write_text(text.replace("@edge", "@node", 1), encoding="utf-8")
     with pytest.raises(NativeComposeError):
+        read_native_records(out)
+
+
+@pytest.mark.parametrize(("genuine", "forged"), [
+    ("source_file.tf", "invented_lemma.tf"),
+    ("has_fact.tf", "invented_alignment.tf"),
+    ("otext.tf", "invented_config.tf"),
+])
+def test_loaded_generic_source_rejects_unaccounted_real_tf_features(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+    genuine: str, forged: str,
+) -> None:
+    """An authentic F/E/config feature duplicated with a forged semantic name."""
+    out = tmp_path / "native"
+    write_native_records(records, out)
+    assert read_native_records(out) == records
+    assert (out / genuine).is_file()
+    shutil.copyfile(out / genuine, out / forged)
+    with pytest.raises(NativeComposeError, match="unexpected.*feature"):
+        read_native_records(out)
+
+
+def test_generic_source_rejects_extra_native_text_recipe(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+) -> None:
+    """Known otext config can still introduce an invented researcher-facing format."""
+    out = tmp_path / "native"
+    write_native_records(records, out)
+    assert read_native_records(out) == records
+    fabric = Fabric(locations=str(out), silent="deep")
+    assert fabric.save(
+        metaData={"otext": {
+            "sectionTypes": "passage",
+            "sectionFeatures": "source_record_id",
+            "fmt:text-orig-full": "{form}",
+            "fmt:forged-author": "{source_file}",
+        }},
+        silent="deep",
+    )
+    with pytest.raises(NativeComposeError, match="otext|rendering"):
         read_native_records(out)
