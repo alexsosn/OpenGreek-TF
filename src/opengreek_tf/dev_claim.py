@@ -81,8 +81,18 @@ def claim_body(issue: int, token: str, expires_at: datetime) -> str:
 
 def _parse_claim(comment: dict[str, Any], issue: int, now: datetime) -> Claim | None:
     body = comment.get("body")
-    matched = _MARKER.fullmatch(body.strip()) if isinstance(body, str) else None
+    if not isinstance(body, str):
+        return None
+    # A live issue comment may include a human-readable research plan after
+    # its *first-line* machine lease. Never parse a quoted/buried marker:
+    # an incidental mention must not block other workers.
+    header, _, prose = body.partition("\n")
+    matched = _MARKER.fullmatch(header.removesuffix("\r"))
     if not matched:
+        return None
+    # Multiple lease headers in a single GitHub comment are ambiguous, even
+    # when the second occurs within a Markdown quote or fenced example.
+    if "<!-- opengreek-dev-claim:v1 " in prose:
         return None
     try:
         data = json.loads(
