@@ -28,7 +28,7 @@ def root(tmp_path: Path) -> Path:
     apparatus = base / "data/paratext"
     secondary.mkdir(parents=True)
     apparatus.mkdir(parents=True)
-    samples = {
+    samples: dict[Path, list[dict[str, object]]] = {
         secondary / "w.jsonl": [
             {
                 "urn": "work-a", "edition": "alt-ocr", "locus": "1.2",
