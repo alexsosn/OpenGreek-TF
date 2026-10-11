@@ -71,7 +71,7 @@ def test_reader_rejects_provenance_for_ordinary_text_atom(tmp_path: Path) -> Non
 
     out = tmp_path / "native"
     write_cr_codepoint_probe(
-        "ἀνήρ\\rλόγος", out,
+        "ἀνήρ\rλόγος", out,
         source_file="data/corpus/greek.jsonl", source_ordinal=2,
     )
     fabric = Fabric(locations=str(out), silent="deep")
@@ -97,7 +97,7 @@ def test_reader_rejects_provenance_for_ordinary_text_atom(tmp_path: Path) -> Non
 def test_reader_rejects_forged_config_feature(tmp_path: Path) -> None:
     out = tmp_path / "native"
     write_cr_codepoint_probe(
-        "ἀνήρ\\rλόγος", out,
+        "ἀνήρ\rλόγος", out,
         source_file="data/corpus/greek.jsonl", source_ordinal=2,
     )
     assert (out / "otext.tf").is_file()
@@ -110,11 +110,12 @@ def test_reader_rejects_forged_native_text_rendering_config(tmp_path: Path) -> N
     from tf.fabric import Fabric  # type: ignore[import-untyped]
 
     out = tmp_path / "native"
-    original = "ἀνήρ\\rλόγος"
+    original = "ἀνήρ\rλόγος"
     write_cr_codepoint_probe(
         original, out,
         source_file="data/corpus/greek.jsonl", source_ordinal=7,
     )
+    assert original.count("\\r") == 1
     assert read_cr_codepoint_probe(out).text == original
     # This is an *allowed* config feature name but rewrites the native
     # researcher-facing text recipe to render the file name as Greek text.
