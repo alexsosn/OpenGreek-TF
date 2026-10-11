@@ -153,10 +153,14 @@ def read_cr_codepoint_probe(destination: Path) -> CRProbeResult:
     # must be the documented writer format, not arbitrary external metadata.
     otext_meta = fabric.features["otext"].metaData
     expected_text_format = "{form}" if with_form else "{source_file}"
+    # Additional fmt:* recipes can misrepresent the text in researchers'
+    # browser/T API even if the default recipe is authentic.
+    text_recipes = {k for k in otext_meta if k.startswith("fmt:")}
     if (
         otext_meta.get("sectionTypes") != "passage"
         or otext_meta.get("sectionFeatures") != "locus"
         or otext_meta.get("fmt:text-orig-full") != expected_text_format
+        or text_recipes != {"fmt:text-orig-full"}
     ):
         raise CRCodepointError("forged native otext rendering configuration")
     if with_form:
