@@ -7,6 +7,7 @@ The loader independently reconstructs every source graph from F/E.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -108,24 +109,36 @@ def _stats(records: tuple[NativeRecord, ...], graphs: tuple[FactGraph, ...]) -> 
 
 
 def write_native_records(
-    records: tuple[NativeRecord, ...], destination: Path,
+    records: tuple[NativeRecord, ...],
+    destination: Path,
+    *,
+    on_phase: Callable[[str], None] | None = None,
 ) -> NativeStats:
-    """Compose multiple source graph families into one loadable native TF."""
+    """Compose into native TF; optionally report validated phase boundaries.
+
+    on_phase runs after successful preflight, native CV.walk, and independent
+    Fabric.load conservation, respectively. The callback does not change data.
+    """
     if destination.exists() or destination.is_symlink():
         raise NativeComposeError("native TF destination already exists")
     graphs = _preflight(records)
+    if on_phase is not None:
+        on_phase("preflight-complete")
     has_text = any(record.text is not None for record in records)
-    all_facts = tuple(node for graph in graphs for node in graph.nodes)
+    # Avoid retaining a second 252k-element reference vector solely for
+    # feature discovery: inspect each already validated fact in-place.
+    def has_fact(predicate: Callable[[FactNode], bool]) -> bool:
+        return any(predicate(node) for graph in graphs for node in graph.nodes)
     available = {
         "atom_kind", "source_file", "source_ordinal", "source_seq",
         "source_record_id", "record_kind", "fact_count", "fact_digest",
         "fact_kind", "fact_id", "fact_position", "has_fact",
     }
-    if any(node.key is not None for node in all_facts):
+    if has_fact(lambda node: node.key is not None):
         available.add("fact_key")
-    if any(node.kind == "str" for node in all_facts):
+    if has_fact(lambda node: node.kind == "str"):
         available.add("fact_text")
-    if any(node.kind in {"int", "bool"} for node in all_facts):
+    if has_fact(lambda node: node.kind in {"int", "bool"}):
         available.add("fact_int")
     if has_text:
         available.add("form")
@@ -205,7 +218,19 @@ def write_native_records(
         warn=False,
     ):
         raise NativeComposeError("Text-Fabric rejected generic mixed source graph")
-    return validate_native_records(records, destination)
+    if on_phase is not None:
+        on_phase("walk-complete")
+    # The independent loaded source graph is the postwrite validator.
+    # Do not preflight a *second* full FactGraph collection while the first
+    # is still live; public validate_native_records remains fully independent.
+    loaded = read_native_records(destination)
+    if loaded != records:
+        raise NativeComposeError(
+            f"generic composer conservation failure: {len(records)} vs {len(loaded)}"
+        )
+    if on_phase is not None:
+        on_phase("load-validated")
+    return _stats(records, graphs)
 
 
 def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
