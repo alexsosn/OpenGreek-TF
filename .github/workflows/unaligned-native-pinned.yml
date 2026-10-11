@@ -97,7 +97,17 @@ jobs:
           build_s = round(time.perf_counter() - t0, 3)
           assert stats.records == stats.metadata_records == stats.source_atoms == 160
           assert stats.text_records == 0
-          assert stats.fact_nodes > 1100
+          # Independently derive the number of native typed source facts
+          # directly from standard JSON containers and scalars, including
+          # every original object/array root, not the writer's FactGraphs.
+          def source_fact_count(obj):
+              if isinstance(obj, dict):
+                  return 1 + sum(source_fact_count(x) for x in obj.values())
+              if isinstance(obj, list):
+                  return 1 + sum(source_fact_count(x) for x in obj)
+              return 1
+          expected_fact_nodes = sum(source_fact_count(row) for _, _, _, row in source)
+          assert stats.fact_nodes == expected_fact_nodes
 
           t1 = time.perf_counter()
           restored = read_native_records(out)
@@ -158,6 +168,7 @@ jobs:
               "paratext_records": 113,
               "original_text_codepoints": sum(len(row["text"]) for _, _, _, row in source),
               "native_source_fact_nodes": stats.fact_nodes,
+              "independent_json_fact_count": expected_fact_nodes,
               "original_source_atoms": stats.source_atoms,
               "native_tf_bytes": manifest.output_bytes,
               "canonical_sha256": manifest.canonical_sha256,
