@@ -190,3 +190,13 @@ def test_rejects_missing_or_extra_json_members_even_with_same_top_level_count(
     path.write_text(json.dumps(item, ensure_ascii=False) + "\n", encoding="utf-8")
     with pytest.raises(JsonlConservationError, match="source"):
         validate_native_jsonl_sources(root, FILES, out)
+
+
+def test_rejects_selected_empty_jsonl_file_even_when_other_rows_exist(
+    corpus: tuple[Path, Path],
+) -> None:
+    root, out = corpus
+    file = "data/corpus/empty.jsonl"
+    (root / file).write_bytes(b"")
+    with pytest.raises(JsonlConservationError, match="empty"):
+        validate_native_jsonl_sources(root, (*FILES, file), out)
