@@ -1,0 +1,126 @@
+name: Pinned TLG crosswalk native TF conservation
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/tlg_crosswalk.py"
+      - "tests/test_tlg_crosswalk.py"
+      - "docs/research/tlg-crosswalk-native-tf.md"
+      - ".github/workflows/tlg-crosswalk-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-crosswalk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Acquire exact immutable Open Greek source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/tlg_crosswalk.json
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Full pinned native crosswalk reconstruction, independent JSON audit and timing
+        shell: python
+        run: |
+          import json
+          import time
+          from collections import Counter
+          from dataclasses import asdict
+          from pathlib import Path
+
+          from tf.fabric import Fabric
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.tlg_crosswalk import (
+              parse_tlg_crosswalk, read_tlg_crosswalk_tf,
+              validate_tlg_crosswalk_tf, write_tlg_crosswalk_tf,
+          )
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          records = parse_tlg_crosswalk(root)
+          assert len(records) == 3454
+          fields = Counter(key for r in records for key, _ in r.fields)
+          assert dict(fields) == {
+              "cts": 3385, "tlg": 3385,
+              "author_slug": 3454, "title": 3454,
+              "pta": 123, "note": 47,
+          }
+          assert sum(not any(k == "cts" for k, _ in r.fields) for r in records) == 69
+          assert sum(v == "" for r in records for _, v in r.fields) == 873
+
+          # Reviewer-independent raw input audit: no converter parser reused.
+          raw = json.loads((root / "data/tlg_crosswalk.json").read_text(encoding="utf-8"))
+          assert len(raw) == 3454
+          assert sum("cts" not in row for row in raw.values()) == 69
+          assert sum("tlg" not in row for row in raw.values()) == 69
+          assert sum(row.get("tlg") == "" for row in raw.values()) == 57
+          assert sum(row.get("title") == "" for row in raw.values()) == 799
+          assert sum(row.get("author_slug") == "" for row in raw.values()) == 17
+          assert sum("\n" in row["title"] for row in raw.values()) == 4
+          assert sum("\t" in row["title"] for row in raw.values()) == 1
+          for key in ("cts", "tlg"):
+              present = [row[key] for row in raw.values() if row.get(key)]
+              assert len(present) - len(set(present)) == 13
+
+          dest = Path("native-tlg-crosswalk")
+          t0 = time.perf_counter()
+          report = write_tlg_crosswalk_tf(root, dest)
+          build_time = round(time.perf_counter() - t0, 3)
+          t1 = time.perf_counter()
+          assert validate_tlg_crosswalk_tf(root, dest) == report
+          observed = read_tlg_crosswalk_tf(dest)
+          assert observed == records
+          # The source-vs-native comparison above could share parser bugs;
+          # compare again to stock-json source key/value order and exact strings.
+          assert tuple((row.identifier, row.fields) for row in observed) == tuple(
+              (identifier, tuple(fields.items())) for identifier, fields in raw.items()
+          )
+          revalidate_time = round(time.perf_counter() - t1, 3)
+          assert asdict(report) == {
+              "records": 3454, "fields": 13848,
+              "empty_values": 873, "source_atoms": 3454,
+          }
+          api = Fabric(locations=str(dest), silent="deep").load(
+              "atom_kind source_file source_record_id source_ordinal "
+              "crosswalk_id crosswalk_key crosswalk_position crosswalk_kind "
+              "crosswalk_value has_crosswalk_field",
+              silent="deep",
+          )
+          assert api
+          assert len(api.F.otype.s("atom")) == 3454
+          assert len(api.F.otype.s("crosswalkRecord")) == 3454
+          assert len(api.F.otype.s("crosswalkField")) == 13848
+          assert not api.F.otype.s("word")
+          assert not api.F.otype.s("passage")
+          assert not (dest / "form.tf").exists()
+          print(json.dumps({
+              "native_crosswalk_conservation": "PASS",
+              **asdict(report),
+              "build_plus_validation_seconds": build_time,
+              "second_validation_seconds": revalidate_time,
+              "tf_bytes": sum(f.stat().st_size for f in dest.glob("*.tf")),
+          }, sort_keys=True))
