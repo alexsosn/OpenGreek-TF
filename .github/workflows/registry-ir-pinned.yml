@@ -78,12 +78,23 @@ jobs:
               for w in raw["works"].values()
           )
 
-          def plain(item):
+          def semantic_order(item):
+              # Independent ordered, type-preserving interpretation of stock
+              # JSON and typed IR. Plain dict equality would miss reordered
+              # source fields; Python also equates True and integer 1.
               if isinstance(item, FieldObject):
-                  return {key: plain(v) for key, v in item.items}
+                  return ("object", tuple(
+                      (key, semantic_order(v)) for key, v in item.items
+                  ))
+              if isinstance(item, dict):
+                  return ("object", tuple(
+                      (key, semantic_order(v)) for key, v in item.items()
+                  ))
               if isinstance(item, FieldArray):
-                  return [plain(v) for v in item.items]
-              return item
+                  return ("array", tuple(semantic_order(v) for v in item.items))
+              if isinstance(item, list):
+                  return ("array", tuple(semantic_order(v) for v in item))
+              return (type(item).__name__, item)
 
           counts = Counter()
           actual_keys = {"authors": [], "works": []}
@@ -99,7 +110,9 @@ jobs:
               graph = build_fact_graph(record)
               reconstructed = restore_fact_fields(graph)
               assert reconstructed == record.fields
-              assert plain(reconstructed) == raw[family][record.slug]
+              assert semantic_order(reconstructed) == semantic_order(
+                  raw[family][record.slug]
+              )
               counts["fact_nodes"] += graph.declared_size
               counts["null_facts"] += sum(n.kind == "null" for n in graph.nodes)
           duration = round(time.perf_counter() - t0, 3)
