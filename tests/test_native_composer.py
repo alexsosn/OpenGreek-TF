@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import pytest
 from tf.fabric import Fabric  # type: ignore[import-untyped]
@@ -169,8 +170,16 @@ def test_corrupt_native_dataset_fails_closed(
     write_native_records(records, out)
     path = out / feature
     raw = path.read_text(encoding="utf-8")
-    assert old in raw
-    path.write_text(raw.replace(old, new, 1), encoding="utf-8")
+    if feature == "fact_digest.tf":
+        digest = re.search(r"[0-9a-f]{64}", raw)
+        assert digest is not None
+        original_hash = digest.group(0)
+        changed_hash = ("f" if original_hash[0] != "f" else "a") + original_hash[1:]
+        raw = raw.replace(original_hash, changed_hash, 1)
+    else:
+        assert old in raw
+        raw = raw.replace(old, new, 1)
+    path.write_text(raw, encoding="utf-8")
     with pytest.raises(NativeComposeError):
         validate_native_records(records, out)
 
