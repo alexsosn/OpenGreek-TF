@@ -170,7 +170,7 @@ def write_author_authority_tf(source_root: Path, destination: Path) -> Authority
                     cv.feature(field, authority_int=value)
                 elif type(value) is str:
                     cv.feature(field, authority_text=value)
-                else:
+                elif isinstance(value, tuple):
                     for item_index, item_text in enumerate(value):
                         item = cv.node("authorityArrayItem", slots=[atom[1]])
                         cv.feature(
