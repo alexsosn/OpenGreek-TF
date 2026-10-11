@@ -220,6 +220,11 @@ def write_native_records(
         raise NativeComposeError("Text-Fabric rejected generic mixed source graph")
     if on_phase is not None:
         on_phase("walk-complete")
+    stats = _stats(records, graphs)
+    # Release the original source FactGraph objects *before* Fabric.load
+    # reconstructs another complete typed graph. The CV.walk director uses
+    # a closure over graphs, so del also clears that closure cell.
+    del graphs
     # The independent loaded source graph is the postwrite validator.
     # Do not preflight a *second* full FactGraph collection while the first
     # is still live; public validate_native_records remains fully independent.
@@ -230,7 +235,7 @@ def write_native_records(
         )
     if on_phase is not None:
         on_phase("load-validated")
-    return _stats(records, graphs)
+    return stats
 
 
 def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
