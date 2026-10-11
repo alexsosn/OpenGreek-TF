@@ -88,6 +88,8 @@ def test_primary_writer_and_independent_fabric_preserve_original_text(
     assert not api.F.otype.s("metadataRecord")
     passages = api.F.otype.s("passage")
     assert len(passages) == 3
+    # Count genuine layout run slots + exactly one source anchor per record.
+    assert len(api.F.otype.s("atom")) == 10
     assert [api.F.source_record_id.v(n) for n in passages] == [
         row.source_record_id for row in expected
     ]
