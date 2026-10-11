@@ -13,7 +13,6 @@ from opengreek_tf.native_composer import write_native_records
 from opengreek_tf.primary_materializer import iter_native_primary
 from opengreek_tf.unaligned_materializer import iter_native_unaligned
 
-
 FILES = (
     "data/corpus/p.jsonl",
     "data/corpus_secondary/s.jsonl",
