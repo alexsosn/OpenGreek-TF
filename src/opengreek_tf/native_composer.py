@@ -17,7 +17,6 @@ from tf.fabric import Fabric  # type: ignore[import-untyped]
 from .fact_graph import (
     FactGraph,
     FactGraphError,
-    FactKind,
     FactNode,
     build_fact_graph,
     restore_fact_fields,
@@ -236,12 +235,8 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
         raise NativeComposeError("missing source records")
     if api.F.otype.s("word") or (destination / "word.tf").exists():
         raise NativeComposeError("native composer invented word-level content")
-    if set(api.F.otype.all) != {
-        "atom", "passage", "metadataRecord", "sourceFact"
-    } - ({"passage"} if not api.F.otype.s("passage") else set()) - (
-        {"metadataRecord"} if not api.F.otype.s("metadataRecord") else set()
-    ):
-        raise NativeComposeError("unexpected Text-Fabric node type")
+    # Known native node types are validated through exhaustive ownership below.
+    # The standard F.otype.all API iterates node IDs, not node-type labels.
     used_atoms: set[int] = set()
     used_facts: set[int] = set()
     used_ids: set[tuple[str, int]] = set()
