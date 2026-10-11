@@ -148,6 +148,17 @@ def read_cr_codepoint_probe(destination: Path) -> CRProbeResult:
     )
     with_form = "form" in discovered_nodes
     with_cr = "codepoint" in discovered_nodes
+    # Reject forged text recipes under the otherwise allowed TF config name.
+    # The default T.text view is *not* CR-safe; its declared format still
+    # must be the documented writer format, not arbitrary external metadata.
+    otext_meta = fabric.features["otext"].metaData
+    expected_text_format = "{form}" if with_form else "{source_file}"
+    if (
+        otext_meta.get("sectionTypes") != "passage"
+        or otext_meta.get("sectionFeatures") != "locus"
+        or otext_meta.get("fmt:text-orig-full") != expected_text_format
+    ):
+        raise CRCodepointError("forged native otext rendering configuration")
     if with_form:
         features += " form"
     if with_cr:
