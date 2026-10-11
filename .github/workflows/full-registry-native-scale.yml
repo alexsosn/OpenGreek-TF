@@ -76,10 +76,34 @@ jobs:
                      for e in w["editions"].values()) == 4577
           assert all(w["author"] in raw["authors"] for w in raw["works"].values())
 
+          # Live RSS is a stage-boundary snapshot, not an intra-stage peak.
+          # Keep the process-wide ru_maxrss separately. The independent
+          # stock-JSON fixture is intentionally already loaded at this point.
+          phase_memory = []
+          def record_phase(name):
+              status = (Path("/proc/self/status").read_text(encoding="utf-8"))
+              values = {}
+              for line in status.splitlines():
+                  if line.startswith(("VmRSS:", "VmHWM:")):
+                      key, value, _unit = line.split()
+                      values[key.rstrip(":")] = round(int(value) / 1024, 1)
+              phase_memory.append({
+                  "phase": name,
+                  "live_rss_mib": values.get("VmRSS"),
+                  "high_water_mib": values.get("VmHWM"),
+                  "elapsed_seconds": round(time.perf_counter() - t0, 3),
+              })
+
           out = Path("native-full-registry")
           t0 = time.perf_counter()
-          stats = materialize_registry(root, out)
+          record_phase("before-native-build")
+          stats = materialize_registry(root, out, on_phase=record_phase)
           build_and_writer_check_s = round(time.perf_counter() - t0, 3)
+          assert [entry["phase"] for entry in phase_memory] == [
+              "before-native-build", "registry-input-loaded",
+              "preflight-complete", "walk-complete", "load-validated",
+          ]
+          assert all(entry["live_rss_mib"] is not None for entry in phase_memory)
           assert stats.records == 14390
           assert stats.metadata_records == stats.source_atoms == 14390
           assert stats.text_records == 0
@@ -162,6 +186,7 @@ jobs:
               "build_and_writer_validation_seconds": build_and_writer_check_s,
               "independent_reload_seconds": reload_s,
               "peak_rss_mib": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
+              "phase_memory_snapshots": phase_memory,
               "raw_sha256_feature_manifest": manifest.raw_sha256,
               "canonical_sha256_feature_manifest": manifest.canonical_sha256,
           }, sort_keys=True))
