@@ -6,7 +6,7 @@ The shared generic native composer conserves all ordered typed fields.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from .native_composer import NativeRecord, NativeStats, write_native_records
@@ -67,7 +67,11 @@ def iter_native_primary(
 
 
 def materialize_primary(
-    root: Path, relative_files: tuple[str, ...], destination: Path,
+    root: Path,
+    relative_files: tuple[str, ...],
+    destination: Path,
+    *,
+    on_phase: Callable[[str], None] | None = None,
 ) -> NativeStats:
     """Write the complete selected primary sample as one native TF graph.
 
@@ -76,4 +80,6 @@ def materialize_primary(
     This API remains all-at-once; it is *not* streaming in bounded memory.
     """
     source_records = tuple(iter_native_primary(root, relative_files))
-    return write_native_records(source_records, destination)
+    if on_phase is not None:
+        on_phase("source-input-loaded")
+    return write_native_records(source_records, destination, on_phase=on_phase)

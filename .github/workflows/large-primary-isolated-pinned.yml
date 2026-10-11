@@ -1,0 +1,179 @@
+name: Pinned 1267 real Greek primary passages isolated native TF scale
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/primary_build_runner.py"
+      - "src/opengreek_tf/primary_materializer.py"
+      - "tests/test_primary_build_runner.py"
+      - "docs/research/isolated-large-primary.md"
+      - ".github/workflows/large-primary-isolated-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-real-primary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch exact five original pinned Greek primary sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/abydenus.fragmenta.jsonl
+          /data/corpus/achaeus.fragmenta.jsonl
+          /data/corpus/acta-barnabae.acta-barnabae.jsonl
+          /data/corpus/acta-philippi.acta-philippi.jsonl
+          /data/corpus/achilles-tatius-scr-erot.leucippe-et-clitophon.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Independently verify every text/typed fact from isolated child native TF
+        shell: python
+        run: |
+          import json
+          import os
+          import resource
+          import time
+          from pathlib import Path
+          from tf.fabric import Fabric
+
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.primary_build_runner import run_isolated_primary_build
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.record_stream import FieldArray, FieldObject
+          from opengreek_tf.tf_integrity import native_tf_manifest
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          files = (
+              "data/corpus/abydenus.fragmenta.jsonl",
+              "data/corpus/achaeus.fragmenta.jsonl",
+              "data/corpus/acta-barnabae.acta-barnabae.jsonl",
+              "data/corpus/acta-philippi.acta-philippi.jsonl",
+              "data/corpus/achilles-tatius-scr-erot.leucippe-et-clitophon.jsonl",
+          )
+          expected_counts = (6, 52, 26, 148, 1035)
+          raw_rows = []
+          occurrences = []
+          for path, count in zip(files, expected_counts, strict=True):
+              lines = (root / path).read_bytes().splitlines()
+              assert len(lines) == count
+              for ordinal, line in enumerate(lines, start=1):
+                  item = json.loads(line.decode("utf-8"))
+                  assert type(item) is dict and type(item["text"]) is str
+                  assert "\r" not in item["text"]
+                  raw_rows.append(item)
+                  occurrences.append((path, ordinal))
+          assert len(raw_rows) == 1267
+          codepoints = sum(len(item["text"]) for item in raw_rows)
+          assert codepoints == 387406
+
+          def run_count(text):
+              return 0 if not text else 1 + sum(
+                  a.isspace() != b.isspace()
+                  for a, b in zip(text, text[1:])
+              )
+          layout_slots = sum(run_count(row["text"]) for row in raw_rows)
+          assert layout_slots == 125049
+          expected_slots = layout_slots + len(raw_rows)
+
+          out = Path("native-large-primary")
+          build_started = time.perf_counter()
+          build = run_isolated_primary_build(root, files, out)
+          build_wall_s = round(time.perf_counter() - build_started, 3)
+          assert build["pid"] != os.getpid()
+          assert build["source_files"] == list(files)
+          assert build["stats"]["records"] == 1267
+          assert build["stats"]["text_records"] == build["stats"]["source_atoms"] == 1267
+          assert build["stats"]["metadata_records"] == 0
+          assert build["stats"]["fact_nodes"] > 5000
+          assert [p["phase"] for p in build["phases"]] == [
+              "source-input-loaded", "preflight-complete",
+              "walk-complete", "load-validated",
+          ]
+
+          start = time.perf_counter()
+          restored = read_native_records(out)
+          independent_load_s = round(time.perf_counter() - start, 3)
+          assert len(restored) == 1267
+
+          def exact(value):
+              if isinstance(value, FieldObject):
+                  return ("object", tuple((key, exact(val)) for key, val in value.items))
+              if isinstance(value, dict):
+                  return ("object", tuple((key, exact(val)) for key, val in value.items()))
+              if isinstance(value, FieldArray):
+                  return ("array", tuple(exact(val) for val in value.items))
+              if isinstance(value, list):
+                  return ("array", tuple(exact(val) for val in value))
+              return (type(value).__name__, value)
+
+          for i, (actual, original) in enumerate(zip(restored, raw_rows, strict=True)):
+              source_file, ordinal = occurrences[i]
+              assert actual.source_file == source_file
+              assert actual.ordinal == ordinal
+              assert actual.source_record_id == f"{source_file}:{ordinal}"
+              assert actual.record_kind == "primary-passage"
+              assert actual.text == original["text"]
+              assert exact(actual.fields) == exact(original)
+
+          fab = Fabric(locations=str(out), silent="deep")
+          available = fab.explore(silent="deep")
+          assert available and "has_fact" in available["edges"]
+          all_names = " ".join(sorted(set(available["nodes"]) | set(available["edges"])))
+          api = fab.load(all_names, silent="deep")
+          assert api
+          passages = api.F.otype.s("passage")
+          facts = api.F.otype.s("sourceFact")
+          assert len(passages) == 1267
+          assert len(facts) == build["stats"]["fact_nodes"]
+          assert len(api.F.otype.s("atom")) == expected_slots
+          assert api.F.otype.s("word") == () and api.F.otype.s("metadataRecord") == ()
+          assert [api.F.source_seq.v(node) for node in passages] == list(range(1, 1268))
+          assert sum(len(api.E.has_fact.f(node)) for node in passages) + sum(
+              len(api.E.has_fact.f(node)) for node in facts
+          ) == len(facts)
+          assert [
+              api.T.text(node, fmt="text-orig-full") for node in passages
+          ] == [item["text"] for item in raw_rows]
+          manifest = native_tf_manifest(out)
+          assert manifest.canonical_sha256 == build["canonical_sha256"]
+          assert manifest.output_bytes == build["native_tf_bytes"]
+          print(json.dumps({
+              "pinned_large_primary_native": "PASS",
+              "files": 5, "original_rows": len(raw_rows),
+              "original_unicode_codepoints": codepoints,
+              "text_layout_slots": layout_slots,
+              "all_native_atoms": expected_slots,
+              "source_fact_nodes": len(facts),
+              "native_tf_bytes": manifest.output_bytes,
+              "canonical_sha256": manifest.canonical_sha256,
+              "builder_peak_rss_mib": build["peak_rss_mib"],
+              "independent_verifier_peak_rss_mib": round(
+                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 2
+              ),
+              "builder_wall_seconds": build_wall_s,
+              "writer_and_own_validation_seconds": build["build_seconds"],
+              "independent_reload_seconds": independent_load_s,
+          }, sort_keys=True))
