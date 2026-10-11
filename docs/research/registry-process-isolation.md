@@ -16,3 +16,16 @@ Direct investigation of `.github/workflows/full-registry-native-scale.yml` revea
 ## Interpretation boundary
 
 A smaller maximum of isolated child/parent process peaks demonstrates that the **validation orchestration** need not retain all phases simultaneously. It does **not** prove a Text-Fabric streaming writer, lower intrinsic native TF F/E assembly peak, or the capability to materialize 65 million Greek tokens in bounded memory. All output data remain native TF; no lossy JSON metadata sidecar is introduced. The JSON process report contains only metrics, not corpus content.
+
+
+## First full pinned result (branch CI)
+
+[Actions #38143300486](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38143300486) succeeded on complete real `data/source_registry.json`, independently confirming **14,390** metadata records/atoms, **252,276** source facts and edges, **12,735** explicit nulls, **18 TF files / 14,454,531 bytes**, and exactly the prior canonical SHA-256 `6dec2456986793999f8f1fe98408d00a8c4c73c98e6c066b6c8f24e0aa57565e`.
+
+The **child build process** peaked at **839.53 MiB** resident memory (19.566 seconds inside child; ~19.971 seconds wall including process startup). Its live RSS by phases was ~92.7 MiB after typed input load, ~110.1 MiB after source preflight, ~196.9 MiB after native TF walk, and ~832.7 MiB after independently loaded writer validation. The **parent source-verification process** peaked at **1,039.9 MiB** (separate reloaded TF reconstruction ~3.854 seconds). The old combined process observed ~1,243.8 MiB [Actions #38139140044](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38139140044).
+
+These are single-run observations on GitHub-hosted Linux runners. Compared with the previous combined process, the maximum of the two new peaks is about **204 MiB lower (~16.4%)**, but this is a reduction of CI **orchestration** live process footprint, not proof that the underlying writer has become streaming or that larger textual corpora fit in memory. Repeated runs and host differences may change the exact figures.
+
+## Additional skeptical test audit
+
+During RED-first CI, tests for the preexisting CR-codepoint Text-Fabric experiment failed intermittently when the UTC hour in `@dateWritten` contained `13`: their corruption fixture used an unrestricted `content.replace("13", ...)` and could change timestamp metadata instead of the intended *integer codepoint feature row*. PR #54 fixes the test to partition the TF header from body, then mutate an actual tab-prefixed codepoint value. This preserves the intended fail-closed unit test and prevents time-of-day false negatives. It does not change the CR-codepoint serializer's semantics or resolve the broader CR compatibility issue #29.
