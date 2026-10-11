@@ -80,8 +80,11 @@ jobs:
           profile_s = round(time.perf_counter() - t0, 3)
           assert source.source_files == 3
           assert source.source_bytes == 9627790
-          assert source.records == sum(source.file_records) > 1267
-          assert source.original_codepoints > 387406
+          # Independently confirmed from the actual immutable Git blobs;
+          # prevent a silent future subset or source identity substitution.
+          assert source.file_records == (15683, 4335, 11959)
+          assert source.records == sum(source.file_records) == 31977
+          assert source.original_codepoints == 2326212
           assert source.text_layout_atoms > 125049
           assert source.total_atoms == source.text_layout_atoms + source.records
 
