@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gc
+import weakref
 from pathlib import Path
 
 import pytest
@@ -96,3 +98,41 @@ def test_empty_and_invalid_records_do_not_emit_phase_or_partial_output(
         write_native_records(invalid, tmp_path / "broken", on_phase=observed.append)
     assert observed == []
     assert not (tmp_path / "broken").exists()
+
+
+def test_writer_releases_preflight_graphs_before_independent_fabric_load(
+    tmp_path: Path,
+    records: tuple[NativeRecord, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Emulate weakref-capable immutable graphs to establish object lifetime.
+    # This tests retained references rather than assuming peak RSS decreases.
+    class TrackedGraph(FactGraph):
+        __slots__ = ("__weakref__",)
+
+    tracked: list[weakref.ReferenceType[TrackedGraph]] = []
+    original_preflight = composer._preflight
+    original_reader = composer.read_native_records
+
+    def preflight(value: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
+        graphs = original_preflight(value)
+        converted = tuple(
+            TrackedGraph(g.occurrence_key, g.nodes, g.declared_size, g.digest)
+            for g in graphs
+        )
+        tracked.extend(weakref.ref(g) for g in converted)
+        return converted
+
+    def independent_reader(destination: Path) -> tuple[NativeRecord, ...]:
+        gc.collect()
+        assert tracked and all(ref() is None for ref in tracked), (
+            "preflight graph objects should not coexist with the heavy "
+            "independent Text-Fabric reload"
+        )
+        return original_reader(destination)
+
+    monkeypatch.setattr(composer, "_preflight", preflight)
+    monkeypatch.setattr(composer, "read_native_records", independent_reader)
+    out = tmp_path / "native"
+    assert write_native_records(records, out).records == 2
+    assert original_reader(out) == records
