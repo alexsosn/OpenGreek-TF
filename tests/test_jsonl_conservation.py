@@ -167,3 +167,26 @@ def test_rejects_duplicate_physical_source_aliases(
         validate_native_jsonl_sources(
             root, (FILES[0], "data/corpus/alias.jsonl", *FILES[1:]), out,
         )
+
+def test_corrupt_native_edge_feature_is_a_conservation_failure(
+    corpus: tuple[Path, Path],
+) -> None:
+    root, out = corpus
+    edge_path = out / "has_fact.tf"
+    assert edge_path.is_file()
+    edge_path.unlink()
+    with pytest.raises(JsonlConservationError, match="native TF"):
+        validate_native_jsonl_sources(root, FILES, out)
+
+
+def test_rejects_missing_or_extra_json_members_even_with_same_top_level_count(
+    corpus: tuple[Path, Path],
+) -> None:
+    root, out = corpus
+    path = root / FILES[2]
+    item = json.loads(path.read_text(encoding="utf-8"))
+    item.pop("license")
+    item["other"] = "PD"
+    path.write_text(json.dumps(item, ensure_ascii=False) + "\n", encoding="utf-8")
+    with pytest.raises(JsonlConservationError, match="source"):
+        validate_native_jsonl_sources(root, FILES, out)
