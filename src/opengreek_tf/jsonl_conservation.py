@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .native_composer import read_native_records
+from .native_composer import NativeComposeError, read_native_records
 from .record_stream import FieldArray, FieldObject, FieldValue
 
 _KINDS = {
@@ -132,7 +132,12 @@ def validate_native_jsonl_sources(
 
     # This loader derives source fields and identities directly from native
     # Fabric F/E, checking every fact edge, digest, text slot and node census.
-    loaded = iter(read_native_records(destination))
+    try:
+        loaded = iter(read_native_records(destination))
+    except (NativeComposeError, OSError) as exc:
+        raise JsonlConservationError(
+            "native TF source graph failed independent loaded validation"
+        ) from exc
     digest = hashlib.sha256()
     counts = {"primary-passage": 0, "secondary-witness": 0, "paratext-record": 0}
     fact_count = 0
