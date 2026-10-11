@@ -1,0 +1,21 @@
+# #29 — native typed CR-codepoint atom (bounded representation experiment)
+
+## Current evidence and alternatives (research, 2026-10-11)
+
+Upstream Open Greek commit `338aa27310b3cfe2588a993b4d113b503597d70f` contains **0 carriage returns and 0 CRLF pairs** in a full, independently recounted 2,293,990-row scan; see `docs/research/tf-control-characters.md`. One actual Herodian row contains DEL; 91 other nested source field occurrences are C1 controls. Their literal TF 13.1 round-trips were already tested in merged #32. Pinned release therefore does not justify silently treating future CR as safe; fail-closed protections in `mini_writer.py` and `fact_probe.py` remain intact.
+
+Text-Fabric 13.1 uses a plain string-feature writer without U+000D escaping. Its reader's universal-newline behavior changes/rejects literal carriage return: `Fabric.load/F.form` and `T.text` are **NOT** an exact CR-aware supported textual representation. The negative real TF 13.1 fixture `test_native_tf_13_1_does_not_roundtrip_unescaped_cr` documents this failure.
+
+Potential solutions: (a) upstream Text-Fabric change + supported load/browser release; (b) semantic typed atom for each genuine source CR codepoint, `codepoint=13` as an integer rather than a native string feature, with ordinary non-CR text preserved as genuine original `form` segments; (c) escaping CR to a string token/placeholder is **rejected** as ambiguous/incorrect if treated as original `F.form` or Greek text. The source CR atom is not a fabricated word or passage: it is a literal source Unicode codepoint. Text units and CR units remain ordered in genuine TF slots, and a source-document nontext metadata atom supplies source provenance.
+
+## Bounded research-plan-TDD-test gates
+
+1. RED-first independent tests demand `write_cr_codepoint_probe` and `read_cr_codepoint_probe` on synthetic `α\rβ`, `α\r\nβ`, `\r\r`, CR at string boundaries, consecutive CR, empty text, backslash-r literal, combining marks, DEL/C1, signed source ordinals. Input may not invent a Greek source work or a source-linked author. Every CR becomes its own slot with native integer `codepoint=13`; every non-CR string run remains byte/codepoint exact in a native `form` string feature.
+2. No semantic JSON/XML sidecars, no rewriting U+000D as U+000A, no TF monkeypatches; the writer must not claim the ordinary `T.text` view is lossless for CR. The **independent reader** must `Fabric.load` typed `atom_kind`, `form`, `codepoint`, provenance `source_file` and `source_ordinal`, inspect `E.oslots` in slot order, refuse missing/extra/mis-typed/duplicate CR data, reconstruct the actual original string with `chr(codepoint)`, and confirm an explicit expected result.
+3. Unit test mutates a TF codepoint int feature or drops one of two consecutive CR units; validator must fail closed. For non-CR strings, normal `T.text` should still reproduce text. For strings with CR, assert `T.text` is **not** silently mistaken for the authoritative reconstruction; browser compatibility remains unproven and #29 cannot close.
+4. Execute real TF 13.1 native save/load and a **pinned real-source** test using an actual control-bearing Herodian row (DEL), without committing source texts or an unnecessary full 2.3m-row corpus rescan. The real record's source SHA must be verified; source codepoint order must roundtrip, with zero phantom words.
+5. Exact-head CI, independent adversarial review grounded in final code, actual TF, pinned source and malformed-feature tests. Merge only if green; keep #29 open for mixed corpus writer integration, full native `T.text`/advanced app rendering and upstream support; do not freeze #3.
+
+## Semantics limitation
+
+A raw TF `fmt:text-orig-full: {form}` will skip CR-only slots because `form` is absent there. That is deliberately a **non-authoritative display** of text containing CR, NOT a fix for `T.text()`. The native **data representation** can be lossless while default text rendering is not. Production release code must either provide an explicit supported custom renderer in the advanced app, or wait for a verified upstream encoding fix. Continue rejecting CR in the existing primary text micro-writer until this distinction is resolved.
