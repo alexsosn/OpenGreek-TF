@@ -147,8 +147,10 @@ def validate_native_jsonl_sources(
         encoded_name = relative.encode("utf-8")
         digest.update(len(encoded_name).to_bytes(4, "big"))
         digest.update(encoded_name)
+        file_rows = 0
         with source_path.open("rb") as source:
             for ordinal, raw in enumerate(source, 1):
+                file_rows += 1
                 digest.update(len(raw).to_bytes(8, "big"))
                 digest.update(raw)
                 context = f"{relative}:{ordinal}"
@@ -190,6 +192,10 @@ def validate_native_jsonl_sources(
                 fact_count += _source_fact_count(original)
                 codepoints += len(original["text"])
                 n += 1
+        if file_rows == 0:
+            raise JsonlConservationError(
+                f"empty selected original JSONL source file: {relative}"
+            )
     if next(loaded, None) is not None:
         raise JsonlConservationError("extra original source occurrences in native TF")
     if not n:
