@@ -44,3 +44,15 @@ Every nested field value, field and array order, and exact scalar type was match
 **Scalability blocker:** ~1.24 GiB RSS for an 8.23 MB JSON file is a warning against extrapolation to the 65M-token primary corpus. Open [#52](https://github.com/alexsosn/OpenGreek-TF/issues/52) isolates empirical phase profiling and streaming/memory reductions; #13 remains open until full primary text performance is demonstrated.
 
 The first CI stress run reached every source and native graph conservation assertion but failed *afterwards* in test-only output hashing because Text-Fabric creates a directory `.tf/`, which matches `glob("*.tf")`. We corrected the manifest selector to hash **regular serialized feature files only**, then reran the full gate to green without weakening source correctness checks.
+
+## Deterministic source-fact content versus volatile TF timestamps
+
+The original feature-file manifest recorded above is a **raw** SHA-256 from the first successful real run, **not a byte-reproducible artifact seal**. An independent second full pinned run produced the same 18 files, 14,454,531 bytes and exactly the same source facts, but raw manifest `ca4ff9a42cf134b464b459d94f7c7d29ccfdbd15f7b72f30184623ed2620082c` instead of `e857cfcd...`.
+
+The investigation traced this to **Text-Fabric's own serializer**, not lost or reordered Greek metadata: upstream `tf/core/data.py` unconditionally emits `@dateWritten=${utcnow().replace(microsecond=0).isoformat()}Z` for each `.tf` file; `tf/core/helpers.py` defines `utcnow()` as `datetime.now(timezone.utc)`, giving timestamps of the form `2026-10-11T10:12:55+00:00Z`. This is volatile file-generation metadata and changes on each run.
+
+A shared `native_tf_manifest` conserves both the raw SHA-256 and a **canonical** SHA-256 that ignores exactly one validated `@dateWritten` line in each serialized *header*, retaining all other header fields, raw F/E values, file names and order. It also excludes Text-Fabric's `.tf/` cache directory. Tests prove that changing real source facts, node types or other provenance metadata still changes the canonical digest. RED-first manifest tests were confirmed failing (**8 failed, 345 baseline passed** [CI #38131034937](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38131034937)).
+
+The first successful real canonical manifest was `6dec2456986793999f8f1fe98408d00a8c4c73c98e6c066b6c8f24e0aa57565e` [Actions #38131198902](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38131198902). The pinned CI now **gates** this value on further runs, separately from the volatile raw manifest. This is reproducibility of the *serialized feature contents excluding generated timestamps*, not a promise of byte-identical unnormalized TF files.
+
+Measured wall times vary by runner: the second independently reloaded benchmark was **13.064s** build+writer validation and **2.788s** additional reload at **1,241.7 MiB** peak; the canonical-manifest test run was **13.839s** + **2.822s**, **1,238.9 MiB** peak. Treat these as observations rather than upper bounds.
