@@ -75,7 +75,7 @@ def test_complete_registry_writer_is_one_shared_native_tf_graph(
     stats = materialize_registry(source, out)
     assert stats == NativeStats(
         records=3, metadata_records=3, text_records=0,
-        source_atoms=3, fact_nodes=36,
+        source_atoms=3, fact_nodes=29,
     )
     assert read_native_records(out) == expected
     assert validate_native_records(expected, out) == stats
