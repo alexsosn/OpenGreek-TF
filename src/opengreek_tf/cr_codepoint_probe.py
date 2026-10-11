@@ -118,26 +118,68 @@ def write_cr_codepoint_probe(
 def read_cr_codepoint_probe(destination: Path) -> CRProbeResult:
     """Independently reconstruct Unicode from *loaded* TF, not writer objects."""
     output = Path(destination)
+    # Check the *whole native TF surface* before selecting features for the
+    # loader. Otherwise a graph can carry fabricated F/E annotations not
+    # accounted for by source text, slots, digest or provenance checks.
+    fabric = Fabric(locations=str(output), silent="deep")
+    declared = fabric.explore(silent="deep")
+    if not declared:
+        raise CRCodepointError("cannot discover native CR source features")
+    required_nodes = {
+        "otype", "atom_kind", "source_file", "source_ordinal",
+        "text_digest", "text_length", "cr_count", "locus",
+    }
+    optional_nodes = {"form", "codepoint"}
+    discovered_nodes = set(declared["nodes"])
+    discovered_edges = set(declared["edges"])
+    discovered_configs = set(declared["configs"])
+    if (
+        not required_nodes.issubset(discovered_nodes)
+        or discovered_nodes - required_nodes - optional_nodes
+        or discovered_edges != {"oslots"}
+        or discovered_configs != {"otext"}
+    ):
+        raise CRCodepointError(
+            "unexpected or missing native TF node/edge/config feature"
+        )
     features = (
         "atom_kind source_file source_ordinal text_digest "
         "text_length cr_count locus"
     )
-    with_form = (output / "form.tf").is_file()
-    with_cr = (output / "codepoint.tf").is_file()
+    with_form = "form" in discovered_nodes
+    with_cr = "codepoint" in discovered_nodes
+    # Reject forged text recipes under the otherwise allowed TF config name.
+    # The default T.text view is *not* CR-safe; its declared format still
+    # must be the documented writer format, not arbitrary external metadata.
+    otext_meta = fabric.features["otext"].metaData
+    expected_text_format = "{form}" if with_form else "{source_file}"
+    # Additional fmt:* recipes can misrepresent the text in researchers'
+    # browser/T API even if the default recipe is authentic.
+    text_recipes = {k for k in otext_meta if k.startswith("fmt:")}
+    if (
+        otext_meta.get("sectionTypes") != "passage"
+        or otext_meta.get("sectionFeatures") != "locus"
+        or otext_meta.get("fmt:text-orig-full") != expected_text_format
+        or text_recipes != {"fmt:text-orig-full"}
+    ):
+        raise CRCodepointError("forged native otext rendering configuration")
     if with_form:
         features += " form"
     if with_cr:
         features += " codepoint"
     try:
-        api = Fabric(locations=str(output), silent="deep").load(
-            features, silent="deep",
-        )
+        api = fabric.load(features, silent="deep")
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise CRCodepointError("corrupt native TF feature graph") from exc
     if not api:
         raise CRCodepointError("could not load native TF features")
-    if api.F.otype.s("word") or len(api.F.otype.s("passage")) != 1:
-        raise CRCodepointError("phantom word or missing passage")
+    # The probe's ontology has only authentic slots and one parent passage.
+    # Any unaccounted native node type is not an original codepoint or row.
+    if (
+        set(api.F.otype.all) != {"atom", "passage"}
+        or len(api.F.otype.s("passage")) != 1
+    ):
+        raise CRCodepointError("unexpected native node type or missing passage")
     passage = api.F.otype.s("passage")[0]
     file_name = api.F.source_file.v(passage)
     ordinal = api.F.source_ordinal.v(passage)
@@ -162,6 +204,30 @@ def read_cr_codepoint_probe(destination: Path) -> CRProbeResult:
     all_slots = set(api.F.otype.s("atom"))
     if not slots or set(slots) != all_slots:
         raise CRCodepointError("orphan or duplicated source text atom")
+    # Full feature-name validation is insufficient: an attacker may add a
+    # forged value to a *known* feature on an unrelated native slot. Preserve
+    # provenance only on the passage and final authentic source-row anchor.
+    if (
+        api.F.atom_kind.v(passage) is not None
+        or (with_form and api.F.form.v(passage) is not None)
+        or (with_cr and api.F.codepoint.v(passage) is not None)
+    ):
+        raise CRCodepointError("unexpected passage text-slot annotation")
+    for slot in slots:
+        if (
+            api.F.source_ordinal.v(slot) is not None
+            or api.F.locus.v(slot) is not None
+            or api.F.text_digest.v(slot) is not None
+            or api.F.text_length.v(slot) is not None
+            or api.F.cr_count.v(slot) is not None
+        ):
+            raise CRCodepointError("unexpected provenance feature on text slot")
+        source_name = api.F.source_file.v(slot)
+        if slot == slots[-1]:
+            if source_name != file_name:
+                raise CRCodepointError("invalid final source-row provenance")
+        elif source_name is not None:
+            raise CRCodepointError("unexpected provenance on non-source slot")
     kinds = [api.F.atom_kind.v(slot) for slot in slots]
     if kinds.count("source-row") != 1 or kinds[-1] != "source-row":
         raise CRCodepointError("source-row anchor must occur exactly once at end")
