@@ -6,7 +6,7 @@ One source occurrence yields one nonlexical metadataRecord and its source facts.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from .native_composer import NativeRecord, NativeStats, write_native_records
@@ -26,7 +26,12 @@ def iter_native_registry(root: Path) -> Iterator[NativeRecord]:
         )
 
 
-def materialize_registry(root: Path, destination: Path) -> NativeStats:
+def materialize_registry(
+    root: Path,
+    destination: Path,
+    *,
+    on_phase: Callable[[str], None] | None = None,
+) -> NativeStats:
     """Convert all source members in a single native TF graph.
 
     Materialize and validate the input *before* opening a TF destination so a
@@ -34,4 +39,6 @@ def materialize_registry(root: Path, destination: Path) -> NativeStats:
     The generic composer writes/loads and validates all native source facts.
     """
     records = tuple(iter_native_registry(root))
-    return write_native_records(records, destination)
+    if on_phase is not None:
+        on_phase("registry-input-loaded")
+    return write_native_records(records, destination, on_phase=on_phase)
