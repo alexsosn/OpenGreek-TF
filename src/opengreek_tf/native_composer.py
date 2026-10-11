@@ -482,6 +482,46 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
 
     if used_atoms != atom_handles or used_facts != fact_handles:
         raise NativeComposeError("unaccounted native TF source or fact nodes")
+
+    # A graph may preserve every authentic fact while attaching fabricated
+    # values under ALREADY KNOWN feature names. Check the complete loaded F/E
+    # surface, not only nodes reached through expected source reconstruction.
+    root_handles = set(roots)
+    source_anchors = {
+        node for node in atom_handles
+        if api.F.atom_kind.v(node) in {"source-row", "metadata-record"}
+    }
+    source_owners = root_handles | source_anchors
+    permitted_placements = {
+        "source_file": source_owners,
+        "source_record_id": source_owners,
+        "source_ordinal": root_handles,
+        "source_seq": root_handles,
+        "record_kind": root_handles,
+        "fact_count": root_handles,
+        "fact_digest": root_handles,
+        "atom_kind": atom_handles,
+        "form": atom_handles,
+        "fact_kind": fact_handles,
+        "fact_id": fact_handles,
+        "fact_position": fact_handles,
+        "fact_key": fact_handles,
+        "fact_text": fact_handles,
+        "fact_int": fact_handles,
+    }
+    for name, allowed_nodes in permitted_placements.items():
+        if name in declared_nodes:
+            for node, _ in getattr(api.F, name).items():
+                if node not in allowed_nodes:
+                    raise NativeComposeError(
+                        f"unexpected native feature placement: {name} on {node}"
+                    )
+    for origin, targets in api.E.has_fact.items():
+        if origin not in root_handles and origin not in fact_handles:
+            raise NativeComposeError("unexpected native source-fact edge origin")
+        if any(target not in fact_handles for target in targets):
+            raise NativeComposeError("unexpected native source-fact edge target")
+
     if set(seqs) != set(range(1, len(seqs) + 1)):
         raise NativeComposeError("missing or duplicated global source order")
     return tuple(seqs[i] for i in range(1, len(seqs) + 1))
