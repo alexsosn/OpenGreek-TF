@@ -1,0 +1,169 @@
+name: Pinned unaligned secondary and paratext native TF conservation
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/unaligned_materializer.py"
+      - "src/opengreek_tf/native_composer.py"
+      - "tests/test_unaligned_materializer.py"
+      - "docs/research/unaligned-native-source-families.md"
+      - ".github/workflows/unaligned-native-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-unaligned-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch exact pinned original witness/apparatus/Latin rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus_secondary/abydenus.fragmenta.jsonl
+          /data/paratext/edition_apparatus.jsonl
+          /data/paratext/latin_in_greek_script.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Conservatively materialize and independently verify all original rows
+        shell: python
+        run: |
+          import json
+          import resource
+          import time
+          from pathlib import Path
+          from tf.fabric import Fabric
+
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.unaligned_materializer import (
+              iter_native_unaligned, materialize_unaligned,
+          )
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.record_stream import FieldArray, FieldObject
+          from opengreek_tf.tf_integrity import native_tf_manifest
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          files = (
+              "data/corpus_secondary/abydenus.fragmenta.jsonl",
+              "data/paratext/edition_apparatus.jsonl",
+              "data/paratext/latin_in_greek_script.jsonl",
+          )
+          counts = (47, 56, 57)
+          kind = ("secondary-witness", "paratext-record", "paratext-record")
+          source = []
+          for path, expected_count, typ in zip(files, counts, kind, strict=True):
+              lines = (root / path).read_bytes().splitlines()
+              assert len(lines) == expected_count
+              for ordinal, line in enumerate(lines, 1):
+                  obj = json.loads(line.decode("utf-8"))
+                  assert type(obj) is dict and type(obj["text"]) is str
+                  assert "\r" not in obj["text"]
+                  source.append((path, ordinal, typ, obj))
+          assert len(source) == 160
+          assert sum(typ == "secondary-witness" for _, _, typ, _ in source) == 47
+          assert sum(typ == "paratext-record" for _, _, typ, _ in source) == 113
+
+          parsed = tuple(iter_native_unaligned(root, files))
+          assert len(parsed) == len(source)
+          assert [(x.source_file, x.ordinal) for x in parsed] == [
+              (p, o) for p, o, _, _ in source
+          ]
+          assert all(rec.text is None for rec in parsed)
+          out = Path("native-unaligned")
+          t0 = time.perf_counter()
+          stats = materialize_unaligned(root, files, out)
+          build_s = round(time.perf_counter() - t0, 3)
+          assert stats.records == stats.metadata_records == stats.source_atoms == 160
+          assert stats.text_records == 0
+          assert stats.fact_nodes > 1100
+
+          t1 = time.perf_counter()
+          restored = read_native_records(out)
+          reload_s = round(time.perf_counter() - t1, 3)
+          assert len(restored) == 160
+
+          def exact(obj):
+              if isinstance(obj, FieldObject):
+                  return ("object", tuple((k, exact(v)) for k, v in obj.items))
+              if isinstance(obj, dict):
+                  return ("object", tuple((k, exact(v)) for k, v in obj.items()))
+              if isinstance(obj, FieldArray):
+                  return ("array", tuple(exact(v) for v in obj.items))
+              if isinstance(obj, list):
+                  return ("array", tuple(exact(v) for v in obj))
+              return (type(obj).__name__, obj)
+
+          for pos, (rec, (filename, ordinal, typ, original)) in enumerate(
+              zip(restored, source, strict=True), 1
+          ):
+              assert rec.source_file == filename
+              assert rec.ordinal == ordinal
+              assert rec.source_record_id == f"{filename}:{ordinal}"
+              assert rec.record_kind == typ
+              assert rec.text is None
+              assert rec.fields.require("text") == original["text"]
+              assert rec.fields.require("edition") == original["edition"]
+              assert rec.fields.require("license") == original["license"]
+              assert exact(rec.fields) == exact(original)
+
+          fabric = Fabric(locations=str(out), silent="deep")
+          discovered = fabric.explore(silent="deep")
+          assert discovered and "has_fact" in discovered["edges"]
+          features = " ".join(sorted(set(discovered["nodes"]) | set(discovered["edges"])))
+          api = fabric.load(features, silent="deep")
+          assert api
+          roots = api.F.otype.s("metadataRecord")
+          assert len(roots) == 160
+          assert not api.F.otype.s("passage")
+          assert not api.F.otype.s("word")
+          assert len(api.F.otype.s("atom")) == 160
+          assert len(api.F.otype.s("sourceFact")) == stats.fact_nodes
+          assert [api.F.source_seq.v(n) for n in roots] == list(range(1, 161))
+          assert [api.F.record_kind.v(n) for n in roots] == [
+              typ for _, _, typ, _ in source
+          ]
+          assert sum(len(api.E.has_fact.f(n)) for n in roots) + sum(
+              len(api.E.has_fact.f(n)) for n in api.F.otype.s("sourceFact")
+          ) == stats.fact_nodes
+          assert not (out / "form.tf").exists()
+          assert not (out / "has_alignment.tf").exists()
+          manifest = native_tf_manifest(out)
+          print(json.dumps({
+              "pinned_unaligned_secondary_paratext": "PASS",
+              "source_files": 3,
+              "original_source_records": 160,
+              "secondary_witnesses": 47,
+              "paratext_records": 113,
+              "original_text_codepoints": sum(len(row["text"]) for _, _, _, row in source),
+              "native_source_fact_nodes": stats.fact_nodes,
+              "original_source_atoms": stats.source_atoms,
+              "native_tf_bytes": manifest.output_bytes,
+              "canonical_sha256": manifest.canonical_sha256,
+              "writer_and_own_load_seconds": build_s,
+              "separate_fabric_loaded_seconds": reload_s,
+              "shared_process_peak_rss_mib": round(
+                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1
+              ),
+          }, sort_keys=True))
