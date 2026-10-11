@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - "src/opengreek_tf/registry_materializer.py"
+      - "src/opengreek_tf/tf_integrity.py"
       - "src/opengreek_tf/native_composer.py"
       - "tests/test_registry_materializer.py"
+      - "tests/test_tf_integrity.py"
       - "docs/research/full-registry-native-scale.md"
       - ".github/workflows/full-registry-native-scale.yml"
   workflow_dispatch:
@@ -45,7 +47,6 @@ jobs:
       - name: Materialize and independently conserve all 14,390 native registry records
         shell: python
         run: |
-          import hashlib
           import json
           import resource
           import time
@@ -56,6 +57,7 @@ jobs:
           from opengreek_tf.source import verify_source
           from opengreek_tf.registry_materializer import materialize_registry
           from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.tf_integrity import native_tf_manifest
           from opengreek_tf.record_stream import FieldObject, FieldArray
 
           root = Path("upstream")
@@ -140,26 +142,20 @@ jobs:
           edge_count += sum(len(api.E.has_fact.f(n)) for n in api.F.otype.s("sourceFact"))
           assert edge_count == 252276
 
-          # TF 13.1 creates a .tf/ cache *directory*, which matches *.tf.
-          # Hash only serialized feature files, not its cache directory.
-          tf_files = sorted(path for path in out.glob("*.tf") if path.is_file())
-          assert tf_files and not (out / "word.tf").exists()
-          output_bytes = sum(f.stat().st_size for f in tf_files)
-          # A digest records this specific output; no second copy is written.
-          digest = hashlib.sha256()
-          for path in tf_files:
-              digest.update(path.name.encode("utf-8") + b"\\0")
-              digest.update(hashlib.sha256(path.read_bytes()).digest())
+          manifest = native_tf_manifest(out)
+          assert manifest.tf_file_count == 18
+          assert not (out / "word.tf").exists()
           print(json.dumps({
               "full_registry_native_tf": "PASS",
               **asdict(stats),
               "aliases_and_edition_year_nulls": null_count,
               "source_bytes": raw_file.stat().st_size,
-              "native_tf_bytes": output_bytes,
-              "tf_file_count": len(tf_files),
+              "native_tf_bytes": manifest.output_bytes,
+              "tf_file_count": manifest.tf_file_count,
               "has_fact_edges": edge_count,
               "build_and_writer_validation_seconds": build_and_writer_check_s,
               "independent_reload_seconds": reload_s,
               "peak_rss_mib": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
-              "sha256_feature_manifest": digest.hexdigest(),
+              "raw_sha256_feature_manifest": manifest.raw_sha256,
+              "canonical_sha256_feature_manifest": manifest.canonical_sha256,
           }, sort_keys=True))
