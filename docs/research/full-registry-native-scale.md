@@ -19,3 +19,28 @@ The current implementation preflights all records into `FactGraph` objects, prec
 ## Boundaries
 
 This is a **single-source-family, metadata-only** scale gate, not the 1,970,947-row primary Greek corpus build. TF slots are non-lexical record anchors. Whole-corpus streaming, production memory bounds, Greek tokenization/word features, primary/secondary/paratext integration and release remain separate unpassed gates.
+
+## Measured pinned full-registry gate (GitHub Actions)
+
+Real immutable registry run: [Actions #38130733743](https://github.com/alexsosn/OpenGreek-TF/actions/runs/38130733743), on implementation head `eb1bd3cfc37dc9ea3ed6e30598cd359e9befd46b`.
+
+| Observation | Real measured value |
+| --- | ---: |
+| Complete author + work records | 14,390 |
+| Nonlexical authentic source atoms | 14,390 |
+| Native `sourceFact` nodes | 252,276 |
+| Native `has_fact` edges | 252,276 |
+| Explicit JSON nulls conserved | 12,735 |
+| UTF-8 upstream registry bytes | 8,233,353 |
+| Serialized native TF bytes | 14,454,531 |
+| Number of native TF feature files | 18 |
+| Materialization **including writer-side Fabric validation** | 21.578 seconds |
+| Independent second `Fabric.load` reconstruction | 4.101 seconds |
+| Peak process RSS **across all phases** | 1,241.7 MiB |
+| TF feature-manifest SHA-256 | `e857cfcd5fc93f46cc8cab282d9e048acc380e54732aa4193286c01cbd7bfbe0` |
+
+Every nested field value, field and array order, and exact scalar type was matched against an independently decoded stock JSON source. Every record/edge/atom is accounted for; TF contained zero Greek passage or `word` nodes. The measured wall times are single shared GitHub Actions runner observations, **not performance guarantees**. Peak RSS includes Python source duplication, writer graph and loaded Text-Fabric validation, so it is not evidence of a memory-bounded streaming architecture.
+
+**Scalability blocker:** ~1.24 GiB RSS for an 8.23 MB JSON file is a warning against extrapolation to the 65M-token primary corpus. Open [#52](https://github.com/alexsosn/OpenGreek-TF/issues/52) isolates empirical phase profiling and streaming/memory reductions; #13 remains open until full primary text performance is demonstrated.
+
+The first CI stress run reached every source and native graph conservation assertion but failed *afterwards* in test-only output hashing because Text-Fabric creates a directory `.tf/`, which matches `glob("*.tf")`. We corrected the manifest selector to hash **regular serialized feature files only**, then reran the full gate to green without weakening source correctness checks.
