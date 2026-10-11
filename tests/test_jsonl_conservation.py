@@ -8,10 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from opengreek_tf.jsonl_conservation import (
-    JsonlConservationError,
-    validate_native_jsonl_sources,
-)
+from opengreek_tf.jsonl_conservation import JsonlConservationError, validate_native_jsonl_sources
 from opengreek_tf.native_composer import write_native_records
 from opengreek_tf.primary_materializer import iter_native_primary
 from opengreek_tf.unaligned_materializer import iter_native_unaligned
