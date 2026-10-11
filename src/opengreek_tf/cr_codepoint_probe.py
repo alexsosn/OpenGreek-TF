@@ -118,26 +118,53 @@ def write_cr_codepoint_probe(
 def read_cr_codepoint_probe(destination: Path) -> CRProbeResult:
     """Independently reconstruct Unicode from *loaded* TF, not writer objects."""
     output = Path(destination)
+    # Check the *whole native TF surface* before selecting features for the
+    # loader. Otherwise a graph can carry fabricated F/E annotations not
+    # accounted for by source text, slots, digest or provenance checks.
+    fabric = Fabric(locations=str(output), silent="deep")
+    declared = fabric.explore(silent="deep")
+    if not declared:
+        raise CRCodepointError("cannot discover native CR source features")
+    required_nodes = {
+        "otype", "atom_kind", "source_file", "source_ordinal",
+        "text_digest", "text_length", "cr_count", "locus",
+    }
+    optional_nodes = {"form", "codepoint"}
+    discovered_nodes = set(declared["nodes"])
+    discovered_edges = set(declared["edges"])
+    discovered_configs = set(declared["configs"])
+    if (
+        not required_nodes.issubset(discovered_nodes)
+        or discovered_nodes - required_nodes - optional_nodes
+        or discovered_edges != {"oslots"}
+        or discovered_configs != {"otext"}
+    ):
+        raise CRCodepointError(
+            "unexpected or missing native TF node/edge/config feature"
+        )
     features = (
         "atom_kind source_file source_ordinal text_digest "
         "text_length cr_count locus"
     )
-    with_form = (output / "form.tf").is_file()
-    with_cr = (output / "codepoint.tf").is_file()
+    with_form = "form" in discovered_nodes
+    with_cr = "codepoint" in discovered_nodes
     if with_form:
         features += " form"
     if with_cr:
         features += " codepoint"
     try:
-        api = Fabric(locations=str(output), silent="deep").load(
-            features, silent="deep",
-        )
+        api = fabric.load(features, silent="deep")
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise CRCodepointError("corrupt native TF feature graph") from exc
     if not api:
         raise CRCodepointError("could not load native TF features")
-    if api.F.otype.s("word") or len(api.F.otype.s("passage")) != 1:
-        raise CRCodepointError("phantom word or missing passage")
+    # The probe's ontology has only authentic slots and one parent passage.
+    # Any unaccounted native node type is not an original codepoint or row.
+    if (
+        set(api.F.otype.all) != {"atom", "passage"}
+        or len(api.F.otype.s("passage")) != 1
+    ):
+        raise CRCodepointError("unexpected native node type or missing passage")
     passage = api.F.otype.s("passage")[0]
     file_name = api.F.source_file.v(passage)
     ordinal = api.F.source_ordinal.v(passage)
