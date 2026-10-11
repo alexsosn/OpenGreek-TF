@@ -144,6 +144,12 @@ jobs:
 
           manifest = native_tf_manifest(out)
           assert manifest.tf_file_count == 18
+          # Source-pin and serializer-gated feature content, ignoring *only*
+          # TF's @dateWritten headers. The previous independent run established
+          # this canonical hash (Actions #38131198902).
+          assert manifest.canonical_sha256 == (
+              "6dec2456986793999f8f1fe98408d00a8c4c73c98e6c066b6c8f24e0aa57565e"
+          )
           assert not (out / "word.tf").exists()
           print(json.dumps({
               "full_registry_native_tf": "PASS",
