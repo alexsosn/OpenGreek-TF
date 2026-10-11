@@ -223,8 +223,9 @@ def write_native_records(
     stats = _stats(records, graphs)
     # Release the original source FactGraph objects *before* Fabric.load
     # reconstructs another complete typed graph. The CV.walk director uses
-    # a closure over graphs, so del also clears that closure cell.
-    del graphs
+    # a closure over graphs, so replacing the variable clears the captured
+    # tuple while keeping the closure analyzable by Python/static checkers.
+    graphs = ()
     # The independent loaded source graph is the postwrite validator.
     # Do not preflight a *second* full FactGraph collection while the first
     # is still live; public validate_native_records remains fully independent.
