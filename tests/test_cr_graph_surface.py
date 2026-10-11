@@ -64,3 +64,43 @@ def test_reader_accepts_genuine_native_control_graph_without_extra_features(
     assert restored.cr_count == 3
     assert restored.source_file == "data/corpus/greek.jsonl"
     assert restored.source_ordinal == 1043
+
+
+def test_reader_rejects_provenance_for_ordinary_text_atom(tmp_path: Path) -> None:
+    from tf.fabric import Fabric  # type: ignore[import-untyped]
+
+    out = tmp_path / "native"
+    write_cr_codepoint_probe(
+        "ἀνήρ\\rλόγος", out,
+        source_file="data/corpus/greek.jsonl", source_ordinal=2,
+    )
+    fabric = Fabric(locations=str(out), silent="deep")
+    api = fabric.load("source_file atom_kind", silent="deep")
+    assert api
+    text_slot = next(
+        node for node in api.F.otype.s("atom")
+        if api.F.atom_kind.v(node) == "text-run"
+    )
+    source_file_values = dict(api.F.source_file.items())
+    source_file_values[text_slot] = "fake/witness.jsonl"
+    # Write a syntactically valid native node feature under the *allowed*
+    # name. Checking feature names alone cannot detect forged per-node data.
+    assert fabric.save(
+        nodeFeatures={"source_file": source_file_values},
+        metaData={"source_file": {"valueType": "str"}},
+        silent="deep",
+    )
+    with pytest.raises(CRCodepointError, match="provenance"):
+        read_cr_codepoint_probe(out)
+
+
+def test_reader_rejects_forged_config_feature(tmp_path: Path) -> None:
+    out = tmp_path / "native"
+    write_cr_codepoint_probe(
+        "ἀνήρ\\rλόγος", out,
+        source_file="data/corpus/greek.jsonl", source_ordinal=2,
+    )
+    assert (out / "otext.tf").is_file()
+    shutil.copyfile(out / "otext.tf", out / "untrusted_format.tf")
+    with pytest.raises(CRCodepointError, match="unexpected.*feature"):
+        read_cr_codepoint_probe(out)
