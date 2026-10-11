@@ -97,6 +97,7 @@ def test_original_source_preflight_rejects_invalid_selection(
     (b'{"text":NaN}\n', "nonstandard"),
     (b'{"text":42}\n', "text"),
     (b'{"text":"\\u000d"}\n', "carriage"),
+    (b'{"text":"\\ud800"}\n', "invalid Unicode"),
     (b'{"text":"', "invalid"),
     (b'{"text":"\xff"}\n', "UTF-8"),
     (b'\n', "blank"),
