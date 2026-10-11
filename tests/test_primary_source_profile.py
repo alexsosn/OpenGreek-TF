@@ -73,6 +73,7 @@ def test_original_source_preflight_rejects_invalid_selection(
     source: Path, problem: str,
 ) -> None:
     a = "data/corpus/alpha.jsonl"
+    files: tuple[str, ...]
     if problem == "duplicate-file":
         files = (a, a)
     elif problem == "other-family":
