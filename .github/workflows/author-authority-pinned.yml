@@ -1,0 +1,109 @@
+name: Pinned TLG author-authority native TF conservation
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/author_authority.py"
+      - "tests/test_author_authority.py"
+      - "docs/research/author-authority-native-tf.md"
+      - ".github/workflows/author-authority-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  author-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch exact immutable Open Greek author authority and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/author_authority.json
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Independently load all 2,240 TLG author authority native records
+        shell: python
+        run: |
+          import json
+          import time
+          from dataclasses import asdict
+          from pathlib import Path
+
+          from tf.fabric import Fabric
+          from opengreek_tf.author_authority import (
+              parse_author_authority, read_author_authority_tf,
+              validate_author_authority_tf, write_author_authority_tf,
+          )
+          from opengreek_tf.source import verify_source
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          source = parse_author_authority(root)
+          assert len(source) == 2240
+          expected_fields = sum(len(row.fields) for row in source)
+          assert expected_fields == 10785
+          expected_items = sum(
+              len(value) for row in source for _name, value in row.fields
+              if isinstance(value, tuple)
+          )
+          assert expected_items == 32
+          assert sum(
+              name == "_multi" for row in source for name, _v in row.fields
+          ) == 16
+          out = Path("native-author-authority")
+          t0 = time.perf_counter()
+          stats = write_author_authority_tf(root, out)
+          built = round(time.perf_counter() - t0, 3)
+          t1 = time.perf_counter()
+          assert validate_author_authority_tf(root, out) == stats
+          revalidated = round(time.perf_counter() - t1, 3)
+          assert read_author_authority_tf(out) == source
+          assert asdict(stats) == {
+              "records": 2240, "fields": 10785,
+              "array_items": 32, "source_atoms": 2240,
+          }
+          api = Fabric(locations=str(out), silent="deep").load(
+              "atom_kind source_file source_record_id source_ordinal "
+              "authority_id authority_key authority_position authority_kind "
+              "authority_text authority_int authority_item_position "
+              "has_authority_field has_authority_item",
+              silent="deep",
+          )
+          assert api
+          assert len(api.F.otype.s("atom")) == 2240
+          assert len(api.F.otype.s("authorAuthority")) == 2240
+          assert len(api.F.otype.s("authorityField")) == 10785
+          assert len(api.F.otype.s("authorityArrayItem")) == 32
+          assert not api.F.otype.s("word")
+          assert not api.F.otype.s("passage")
+          assert not (out / "form.tf").exists()
+          print(json.dumps({
+              "source": "pinned author_authority.json",
+              "native_tf_authority_conservation": "PASS",
+              **asdict(stats),
+              "build_and_initial_validation_seconds": built,
+              "second_independent_validation_seconds": revalidated,
+              "native_tf_bytes": sum(p.stat().st_size for p in out.glob("*.tf")),
+          }, sort_keys=True))
