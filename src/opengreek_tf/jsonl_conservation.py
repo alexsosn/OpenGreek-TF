@@ -118,12 +118,12 @@ def validate_native_jsonl_sources(
         ):
             raise JsonlConservationError(f"invalid original JSONL source path: {relative}")
         try:
-            original = (root / relative).resolve(strict=True)
-            if not original.is_relative_to(source_root) or not original.is_file():
+            resolved_source = (root / relative).resolve(strict=True)
+            if not resolved_source.is_relative_to(source_root) or not resolved_source.is_file():
                 raise JsonlConservationError(
                     f"source path escapes root or is not a file: {relative}"
                 )
-            identity = original.stat()
+            identity = resolved_source.stat()
         except (OSError, RuntimeError) as exc:
             raise JsonlConservationError(
                 f"missing or inaccessible original source: {relative}"
@@ -132,7 +132,7 @@ def validate_native_jsonl_sources(
         if physical in physical_ids:
             raise JsonlConservationError(f"duplicate physical original source file: {relative}")
         physical_ids.add(physical)
-        checked_files.append((relative, original, _KINDS[path.parts[1]][0]))
+        checked_files.append((relative, resolved_source, _KINDS[path.parts[1]][0]))
 
     # This loader derives source fields and identities directly from native
     # Fabric F/E, checking every fact edge, digest, text slot and node census.
