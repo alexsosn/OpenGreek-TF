@@ -40,6 +40,13 @@ class FieldObject:
                 return value
         return None
 
+    def require(self, key: str) -> FieldValue:
+        """Return a present typed member (including explicit null), else KeyError."""
+        for found, value in self.items:
+            if found == key:
+                return value
+        raise KeyError(key)
+
 
 FieldValue: TypeAlias = str | int | bool | None | FieldArray | FieldObject
 
