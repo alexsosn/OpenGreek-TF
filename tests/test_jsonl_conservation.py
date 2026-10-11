@@ -70,7 +70,9 @@ def test_mixed_original_jsonl_and_loaded_native_tf_are_exact(
     assert report.paratext_records == 1
     assert report.source_files == 3
     assert report.source_fact_nodes > 20
-    assert report.source_unicode_codepoints == len("λόγος  ἀνήρ\n") + len("ἕτερον") + len("ὑπόμνημα")
+    assert report.source_unicode_codepoints == (
+        len("λόγος  ἀνήρ\n") + len("ἕτερον") + len("ὑπόμνημα")
+    )
     assert len(report.original_source_sha256) == 64
 
 
