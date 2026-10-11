@@ -136,6 +136,15 @@ jobs:
           assert tf
           assert len(tf.F.otype.s("passage")) == 232
           assert len(tf.F.otype.s("sourceFact")) == stats.fact_nodes
+          # Independently count source text's maximal whitespace/nonspace
+          # layout runs, not the composer's segmentation implementation.
+          def layout_run_count(value):
+              return 0 if not value else 1 + sum(
+                  a.isspace() != b.isspace()
+                  for a, b in zip(value, value[1:])
+              )
+          expected_atoms = sum(1 + layout_run_count(row["text"]) for row in raw_rows)
+          assert len(tf.F.otype.s("atom")) == expected_atoms
           assert not tf.F.otype.s("word") and not tf.F.otype.s("metadataRecord")
           assert [tf.F.source_seq.v(n) for n in tf.F.otype.s("passage")] == list(range(1, 233))
           assert sum(len(tf.E.has_fact.f(n)) for n in tf.F.otype.s("passage")) + sum(
@@ -154,6 +163,7 @@ jobs:
               "source_unicode_characters": sum(len(row["text"]) for row in raw_rows),
               "source_fact_nodes": stats.fact_nodes,
               "tf_source_atoms": stats.source_atoms,
+              "tf_total_atoms_including_text_layout": expected_atoms,
               "tf_output_bytes": manifest.output_bytes,
               "canonical_sha256": manifest.canonical_sha256,
               "writer_and_own_validation_seconds": writer_s,
