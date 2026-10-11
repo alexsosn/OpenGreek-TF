@@ -155,6 +155,12 @@ def profile_primary_sources(
                         f"{context}: source text must be a literal string"
                     )
                 text: str = original["text"]
+                try:
+                    text.encode("utf-8", errors="strict")
+                except UnicodeEncodeError as exc:
+                    raise PrimarySourceProfileError(
+                        f"{context}: invalid Unicode source text"
+                    ) from exc
                 if "\r" in text:
                     raise PrimarySourceProfileError(
                         f"{context}: carriage return unsupported by native T.text"
