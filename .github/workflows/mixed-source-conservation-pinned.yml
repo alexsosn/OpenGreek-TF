@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "src/opengreek_tf/jsonl_conservation.py"
+      - "src/opengreek_tf/research_queries.py"
+      - "tests/test_research_queries.py"
+      - "docs/research/native-query-examples.md"
       - "tests/test_jsonl_conservation.py"
       - "docs/research/independent-mixed-source-validation.md"
       - ".github/workflows/mixed-source-conservation-pinned.yml"
@@ -59,6 +62,7 @@ jobs:
           from opengreek_tf.primary_materializer import iter_native_primary
           from opengreek_tf.unaligned_materializer import iter_native_unaligned
           from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.research_queries import search_native
           from opengreek_tf.tf_integrity import native_tf_manifest
 
           root = Path("upstream")
@@ -97,6 +101,50 @@ jobs:
           assert report.secondary_witnesses == 47
           assert report.paratext_records == 113
           assert report.source_fact_nodes == native.fact_nodes
+
+          # Research examples must work against genuine pinned native F/E,
+          # not against fixture-only records or a JSONL semantic sidecar.
+          first_primary = json.loads(
+              (root / original_files[0]).read_text(encoding="utf-8").splitlines()[0]
+          )
+          first_secondary = json.loads(
+              (root / original_files[1]).read_text(encoding="utf-8").splitlines()[0]
+          )
+          first_paratext = json.loads(
+              (root / original_files[2]).read_text(encoding="utf-8").splitlines()[0]
+          )
+          matched_primary = search_native(
+              out, kind="primary-passage", contains=first_primary["text"],
+              urn=first_primary["urn"], edition=first_primary["edition"],
+              max_results=10,
+          )
+          assert any(
+              hit.source_file == original_files[0]
+              and hit.source_ordinal == 1
+              and hit.text == first_primary["text"]
+              for hit in matched_primary
+          )
+          matched_secondary = search_native(
+              out, kind="secondary-witness", contains=first_secondary["text"],
+              urn=first_secondary["urn"], edition=first_secondary["edition"],
+              max_results=10,
+          )
+          assert any(
+              hit.source_file == original_files[1]
+              and hit.source_ordinal == 1
+              and hit.text == first_secondary["text"]
+              for hit in matched_secondary
+          )
+          matched_paratext = search_native(
+              out, kind="paratext-record", contains=first_paratext["text"],
+              max_results=10,
+          )
+          assert any(
+              hit.source_file == original_files[2]
+              and hit.source_ordinal == 1
+              and hit.text == first_paratext["text"]
+              for hit in matched_paratext
+          )
           assert len(report.original_source_sha256) == 64
 
           fabric = Fabric(locations=str(out), silent="deep")
@@ -133,6 +181,7 @@ jobs:
           assert native_tf_manifest(again).canonical_sha256 == manifest.canonical_sha256
           print(json.dumps({
               "independent_mixed_original_source": "PASS",
+              "real_pinned_research_queries": "PASS",
               **asdict(report),
               "native_facts": native.fact_nodes,
               "native_output_bytes": manifest.output_bytes,

@@ -68,6 +68,8 @@ Network access belongs to acquisition only. Later conversion commands receive a 
 
 A standard Text-Fabric advanced app under `app/` is part of the release. Its section and text-format configuration is intentionally deferred until the native graph schema is frozen. The standard TF browser is the default web application; a custom web stack needs a demonstrated requirement.
 
+The current pre-release native F/E graph is already queryable without a custom web stack. See the [executable Greek search and provenance examples](docs/research/native-query-examples.md) for literal Greek text, edition/source filters and unaligned witness/paratext discovery; these examples do **not** assert the final ontology or full-corpus release.
+
 ## Agora
 
 OpenGreek-TF owns parsing, scholarly semantics, TF construction, validation, app configuration, and source-specific documentation.
