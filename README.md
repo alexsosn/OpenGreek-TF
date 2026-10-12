@@ -83,7 +83,12 @@ from tf.fabric import Fabric
 from tf.app import use
 
 data = Path("./generated/native")
-api = Fabric(locations=str(data), silent="deep").load("", silent="deep")
+fabric = Fabric(locations=str(data), silent="deep")
+found = fabric.explore(silent="deep")
+api = fabric.load(
+    " ".join(sorted(set(found["nodes"]) | set(found["edges"]))),
+    silent="deep",
+)
 A = use(f"app:{Path('app').resolve()}", api=api, silent="deep")
 p = A.api.F.otype.s("passage")[0]
 print(A.sectionStrFromNode(p), repr(A.api.T.text(p, fmt="text-orig-full")))
