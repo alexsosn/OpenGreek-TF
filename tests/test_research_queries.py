@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from tf.fabric import Fabric  # type: ignore[import-untyped]
@@ -128,7 +129,7 @@ def test_search_is_bounded_and_ordered_by_original_global_source_sequence(
     ({"kind": "primary-passage", "contains": "", "source": 9}, "source"),
 ])
 def test_rejects_unsupported_or_ambiguous_research_query(
-    native: Path, kwargs: dict[str, object], part: str,
+    native: Path, kwargs: dict[str, Any], part: str,
 ) -> None:
     with pytest.raises((ValueError, NativeResearchQueryError), match=part):
         search_native(native, **kwargs)
