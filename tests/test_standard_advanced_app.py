@@ -67,7 +67,7 @@ def test_standard_local_tf_app_navigates_actual_native_source_record(
 def test_standard_app_exposes_honest_single_passage_section_and_docs(
     mixed_native: tuple[Path, str, str],
 ) -> None:
-    native_dir, source_record_id, _ = mixed_native
+    native_dir, _, _ = mixed_native
     api = Fabric(locations=str(native_dir), silent="deep").load(
         "source_record_id form record_kind", silent="deep",
     )
@@ -76,6 +76,6 @@ def test_standard_app_exposes_honest_single_passage_section_and_docs(
     app = use(f"app:{app_dir}", api=api, silent="deep")
     assert app is not None and app.api is not None
     assert tuple(app.api.T.sectionTypes) == ("passage",)
-    assert app.context.exampleSection == source_record_id
+    assert app.context.exampleSection == "data/corpus/abydenus.fragmenta.jsonl:1"
     assert app.context.docPage == "research/native-query-examples"
     assert app.context.textFormat == "text-orig-full"
