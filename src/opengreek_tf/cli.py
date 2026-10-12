@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 
 from . import __version__
 from .audit import audit_source
 from .release import SUPPORTED_RELEASE
+from .research_queries import search_native
 from .source import fetch_source, verify_source
 
 
@@ -41,6 +43,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audit.add_argument("source", help="Local Open Greek Git checkout")
     audit.add_argument("--output", required=True, help="Write deterministic audit JSON here")
+
+    search = subparsers.add_parser(
+        "search-native",
+        help="Search literal Greek/source facts in an existing generated native TF graph",
+    )
+    search.add_argument("tf_directory", type=Path, help="Generated native TF directory")
+    search.add_argument(
+        "--kind", required=True,
+        choices=("primary-passage", "secondary-witness", "paratext-record"),
+    )
+    search.add_argument("--contains", default="", help="Exact Unicode substring")
+    search.add_argument("--urn", help="Original source row urn field (not inferred CTS)")
+    search.add_argument("--edition", help="Original source row edition field")
+    search.add_argument("--source", help="Original source row source field")
+    search.add_argument("--max-results", type=int, default=20)
     return parser
 
 
@@ -95,6 +112,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        return 0
+
+    if args.command == "search-native":
+        for hit in search_native(
+            args.tf_directory, kind=args.kind, contains=args.contains,
+            urn=args.urn, edition=args.edition, source=args.source,
+            max_results=args.max_results,
+        ):
+            print(json.dumps(asdict(hit), ensure_ascii=False, sort_keys=True))
         return 0
 
     raise AssertionError(f"unhandled command: {args.command}")

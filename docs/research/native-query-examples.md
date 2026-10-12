@@ -15,21 +15,21 @@ JSONL checkout. Replace the example value with an actual source `urn` or
 edition present in that dataset:
 
 ```bash
-python -m opengreek_tf.research_queries ./generated/native \
+opengreek-tf search-native ./generated/native \
   --kind primary-passage --contains "λόγος" --max-results 20
 
-python -m opengreek_tf.research_queries ./generated/native \
+opengreek-tf search-native ./generated/native \
   --kind primary-passage --contains "ἀνήρ" --source tei \
   --edition ACTUAL_SOURCE_EDITION --max-results 10
 
-python -m opengreek_tf.research_queries ./generated/native \
+opengreek-tf search-native ./generated/native \
   --kind secondary-witness --contains "λόγος" --max-results 10
 
-python -m opengreek_tf.research_queries ./generated/native \
+opengreek-tf search-native ./generated/native \
   --kind paratext-record --contains "ὑπόμνημα" --max-results 10
 ```
 
-Each JSONL result includes literal reconstructed `text`, record `kind`,
+The original \`python -m opengreek_tf.research_queries\` entrypoint remains available for existing scripts. Both commands delegate to the same native F/E search implementation.\n\nEach JSONL result includes literal reconstructed `text`, record `kind`,
 `source_file`, 1-based `source_ordinal`, global `source_seq`,
 `source_record_id`, and available *source-authored string fields*: `urn`,
 `locus`, `edition`, `source`, `license`, `slug`, and string `page`.

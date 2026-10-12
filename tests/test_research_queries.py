@@ -149,3 +149,35 @@ def test_command_line_emits_machine_readable_genuine_source_provenance(
     assert rows[0]["text"] == "λόγος  ἀνήρ\n"
     assert rows[0]["source_file"] == "data/corpus/p.jsonl"
     assert rows[0]["source_ordinal"] == 1
+
+
+def test_public_cli_search_native_preserves_greek_and_source_provenance(
+    native: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The installed project's CLI must expose the existing native F/E search."""
+    from opengreek_tf.cli import main as public_main
+
+    assert public_main([
+        "search-native", str(native), "--kind", "primary-passage",
+        "--contains", "λόγος", "--urn", "real-work-a",
+        "--edition", "first", "--source", "tei", "--max-results", "1",
+    ]) == 0
+    primary = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(primary) == 1
+    assert primary[0]["text"] == "λόγος  ἀνήρ\n"
+    assert primary[0]["source_record_id"] == "data/corpus/p.jsonl:1"
+    assert primary[0]["edition"] == "first"
+
+    assert public_main([
+        "search-native", str(native), "--kind", "secondary-witness",
+        "--contains", "λόγος",
+    ]) == 0
+    secondary = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(secondary) == 1
+    assert secondary[0]["text"] == "λόγος ἕτερος"
+    assert secondary[0]["kind"] == "secondary-witness"
+    assert secondary[0]["source_file"] == "data/corpus_secondary/p.jsonl"
+
+    with pytest.raises(SystemExit) as invalid:
+        public_main(["search-native", str(native), "--kind", "word"])
+    assert invalid.value.code == 2
