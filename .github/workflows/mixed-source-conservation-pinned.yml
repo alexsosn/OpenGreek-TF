@@ -5,6 +5,7 @@ on:
     paths:
       - "src/opengreek_tf/jsonl_conservation.py"
       - "src/opengreek_tf/research_queries.py"
+      - "src/opengreek_tf/cli.py"
       - "tests/test_research_queries.py"
       - "docs/research/native-query-examples.md"
       - "tests/test_jsonl_conservation.py"
@@ -52,6 +53,7 @@ jobs:
         run: |
           import json
           import resource
+          import subprocess
           import time
           from dataclasses import asdict
           from pathlib import Path
@@ -145,6 +147,22 @@ jobs:
               and hit.text == first_paratext["text"]
               for hit in matched_paratext
           )
+          # End-user packaging smoke: invoke the *installed* console script
+          # against the same genuinely pinned native corpus validated above.
+          stdout = subprocess.check_output([
+              "opengreek-tf", "search-native", str(out),
+              "--kind", "primary-passage",
+              "--contains", first_primary["text"].split()[0],
+              "--urn", first_primary["urn"],
+              "--edition", first_primary["edition"],
+              "--max-results", "20",
+          ], text=True)
+          cli_hits = [json.loads(line) for line in stdout.splitlines()]
+          assert any(
+              hit["source_record_id"] == f"{original_files[0]}:1"
+              and hit["text"] == first_primary["text"]
+              for hit in cli_hits
+          )
           assert len(report.original_source_sha256) == 64
 
           fabric = Fabric(locations=str(out), silent="deep")
@@ -182,6 +200,7 @@ jobs:
           print(json.dumps({
               "independent_mixed_original_source": "PASS",
               "real_pinned_research_queries": "PASS",
+              "installed_search_native_cli": "PASS",
               **asdict(report),
               "native_facts": native.fact_nodes,
               "native_output_bytes": manifest.output_bytes,
