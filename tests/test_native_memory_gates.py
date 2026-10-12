@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 import opengreek_tf.native_composer as composer
+from tf.convert.walker import CV  # type: ignore[import-untyped]
 from opengreek_tf.fact_graph import FactGraph
 from opengreek_tf.native_composer import (
     NativeComposeError,
@@ -186,7 +187,7 @@ def test_writer_releases_complete_preflight_graph_set_before_cv_walk(
 
     refs: list[weakref.ReferenceType[TrackedGraph]] = []
     original_preflight = composer._preflight
-    original_walk = composer.CV.walk
+    original_walk = CV.walk
 
     def tracked_preflight(value: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
         graphs = original_preflight(value)
@@ -206,7 +207,7 @@ def test_writer_releases_complete_preflight_graph_set_before_cv_walk(
         return original_walk(self, *args, **kwargs)
 
     monkeypatch.setattr(composer, "_preflight", tracked_preflight)
-    monkeypatch.setattr(composer.CV, "walk", inspected_walk)
+    monkeypatch.setattr(CV, "walk", inspected_walk)
     out = tmp_path / "native"
     assert write_native_records(records, out).records == len(records)
     assert read_native_records(out) == records
