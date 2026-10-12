@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tf.convert.walker import CV  # type: ignore[import-untyped]
 
 import opengreek_tf.native_composer as composer
 from opengreek_tf.fact_graph import FactGraph
@@ -22,7 +23,6 @@ from opengreek_tf.native_composer import (
 )
 from opengreek_tf.record_stream import FieldArray, FieldObject
 from opengreek_tf.tf_integrity import native_tf_manifest
-from tf.convert.walker import CV  # type: ignore[import-untyped]
 
 
 @pytest.fixture
