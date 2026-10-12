@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -195,4 +196,88 @@ def test_reject_orphan_or_unexpected_metadata_fact(
     # Corrupted relationship layer cannot silently pass the independent reader.
     p.write_text(text.replace("@edge", "@node", 1), encoding="utf-8")
     with pytest.raises(NativeComposeError):
+        read_native_records(out)
+
+
+@pytest.mark.parametrize(("genuine", "forged"), [
+    ("source_file.tf", "invented_lemma.tf"),
+    ("has_fact.tf", "invented_alignment.tf"),
+    ("otext.tf", "invented_config.tf"),
+])
+def test_loaded_generic_source_rejects_unaccounted_real_tf_features(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+    genuine: str, forged: str,
+) -> None:
+    """An authentic F/E/config feature duplicated with a forged semantic name."""
+    out = tmp_path / "native"
+    write_native_records(records, out)
+    assert read_native_records(out) == records
+    assert (out / genuine).is_file()
+    shutil.copyfile(out / genuine, out / forged)
+    with pytest.raises(NativeComposeError, match="unexpected.*feature"):
+        read_native_records(out)
+
+
+def test_generic_source_rejects_extra_native_text_recipe(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+) -> None:
+    """Known otext config can still introduce an invented researcher-facing format."""
+    out = tmp_path / "native"
+    write_native_records(records, out)
+    assert read_native_records(out) == records
+    fabric = Fabric(locations=str(out), silent="deep")
+    assert fabric.save(
+        metaData={"otext": {
+            "sectionTypes": "passage",
+            "sectionFeatures": "source_record_id",
+            "fmt:text-orig-full": "{form}",
+            "fmt:forged-author": "{source_file}",
+        }},
+        silent="deep",
+    )
+    with pytest.raises(NativeComposeError, match="otext|rendering"):
+        read_native_records(out)
+
+
+def test_generic_reader_rejects_known_source_file_on_fact_node(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+) -> None:
+    """Real native F.source_file gets an extra false claim on a sourceFact."""
+    out = tmp_path / "native"
+    write_native_records(records, out)
+    fabric = Fabric(locations=str(out), silent="deep")
+    api = fabric.load("source_file", silent="deep")
+    assert api
+    extra = api.F.otype.s("sourceFact")[0]
+    source_files = dict(api.F.source_file.items())
+    source_files[extra] = "forged/witness.jsonl"
+    assert fabric.save(
+        nodeFeatures={"source_file": source_files},
+        metaData={"source_file": {"valueType": "str"}},
+        silent="deep",
+    )
+    with pytest.raises(NativeComposeError, match="unexpected.*placement"):
+        read_native_records(out)
+
+
+def test_generic_reader_rejects_known_relation_from_text_atom(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+) -> None:
+    """Additional true TF has_fact edge makes an atom appear to own source facts."""
+    out = tmp_path / "native"
+    write_native_records(records, out)
+    fabric = Fabric(locations=str(out), silent="deep")
+    api = fabric.load("has_fact atom_kind", silent="deep")
+    assert api
+    atom = next(n for n in api.F.otype.s("atom")
+                if api.F.atom_kind.v(n) == "text")
+    fact = api.F.otype.s("sourceFact")[0]
+    edges = {n: set(targets) for n, targets in api.E.has_fact.items()}
+    edges[atom] = {fact}
+    assert fabric.save(
+        edgeFeatures={"has_fact": edges},
+        metaData={"has_fact": {"edgeValues": False}},
+        silent="deep",
+    )
+    with pytest.raises(NativeComposeError, match="unexpected.*edge"):
         read_native_records(out)

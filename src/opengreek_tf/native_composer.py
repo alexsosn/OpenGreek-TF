@@ -297,21 +297,46 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
         "fact_kind", "fact_id", "fact_position", "has_fact",
     }
     optional = {"fact_key", "fact_text", "fact_int", "form"}
+    required_nodes = (mandatory - {"has_fact"}) | {"otype"}
     declared_nodes = set(discovered["nodes"])
     declared_edges = set(discovered["edges"])
+    declared_configs = set(discovered["configs"])
     declared = declared_nodes | declared_edges
+    # A selective Fabric.load cannot reveal fabricated features elsewhere on
+    # disk: reject even valid native F/E/config files beyond the writer's
+    # exact published surface, before reconstructing the source facts.
     if (
-        not (mandatory - {"has_fact"}).issubset(declared_nodes)
-        or "has_fact" not in declared_edges
-        or "has_fact" in declared_nodes
+        not required_nodes.issubset(declared_nodes)
+        or declared_nodes - required_nodes - optional
+        or declared_edges != {"oslots", "has_fact"}
+        or declared_configs != {"otext"}
     ):
-        raise NativeComposeError("missing or wrong-kind required native TF feature")
+        raise NativeComposeError("unexpected or missing native TF feature")
     api = fabric.load(
         " ".join(sorted(mandatory | (optional & declared))), silent="deep",
     )
     if not api:
         raise NativeComposeError("cannot load native typed source graph")
     roots = tuple(api.F.otype.s("passage")) + tuple(api.F.otype.s("metadataRecord"))
+    # The known otext file can carry an extra forged research-facing format
+    # or unsupported section/structure declarations without changing any
+    # source fact. Check those declarations independently of T.text equality.
+    has_passages = bool(api.F.otype.s("passage"))
+    otext = fabric.features["otext"].metaData
+    expected_format = "{form}" if has_passages else "{source_record_id}"
+    expected_sections = "passage" if has_passages else ""
+    expected_section_features = "source_record_id" if has_passages else ""
+    if (
+        (has_passages and "form" not in declared_nodes)
+        or (not has_passages and "form" in declared_nodes)
+        or otext.get("fmt:text-orig-full") != expected_format
+        or {key for key in otext if key.startswith("fmt:")} != {"fmt:text-orig-full"}
+        or otext.get("sectionTypes", "") != expected_sections
+        or otext.get("sectionFeatures", "") != expected_section_features
+        or otext.get("structureTypes") not in (None, "")
+        or otext.get("structureFeatures") not in (None, "")
+    ):
+        raise NativeComposeError("unexpected native otext rendering configuration")
     fact_handles = set(api.F.otype.s("sourceFact"))
     atom_handles = set(api.F.otype.s("atom"))
     if not roots:
@@ -457,6 +482,46 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
 
     if used_atoms != atom_handles or used_facts != fact_handles:
         raise NativeComposeError("unaccounted native TF source or fact nodes")
+
+    # A graph may preserve every authentic fact while attaching fabricated
+    # values under ALREADY KNOWN feature names. Check the complete loaded F/E
+    # surface, not only nodes reached through expected source reconstruction.
+    root_handles = set(roots)
+    source_anchors = {
+        node for node in atom_handles
+        if api.F.atom_kind.v(node) in {"source-row", "metadata-record"}
+    }
+    source_owners = root_handles | source_anchors
+    permitted_placements = {
+        "source_file": source_owners,
+        "source_record_id": source_owners,
+        "source_ordinal": root_handles,
+        "source_seq": root_handles,
+        "record_kind": root_handles,
+        "fact_count": root_handles,
+        "fact_digest": root_handles,
+        "atom_kind": atom_handles,
+        "form": atom_handles,
+        "fact_kind": fact_handles,
+        "fact_id": fact_handles,
+        "fact_position": fact_handles,
+        "fact_key": fact_handles,
+        "fact_text": fact_handles,
+        "fact_int": fact_handles,
+    }
+    for name, allowed_nodes in permitted_placements.items():
+        if name in declared_nodes:
+            for node, _ in getattr(api.F, name).items():
+                if node not in allowed_nodes:
+                    raise NativeComposeError(
+                        f"unexpected native feature placement: {name} on {node}"
+                    )
+    for origin, targets in api.E.has_fact.items():
+        if origin not in root_handles and origin not in fact_handles:
+            raise NativeComposeError("unexpected native source-fact edge origin")
+        if any(target not in fact_handles for target in targets):
+            raise NativeComposeError("unexpected native source-fact edge target")
+
     if set(seqs) != set(range(1, len(seqs) + 1)):
         raise NativeComposeError("missing or duplicated global source order")
     return tuple(seqs[i] for i in range(1, len(seqs) + 1))
