@@ -75,7 +75,7 @@ def test_standard_app_exposes_honest_single_passage_section_and_docs(
     app_dir = Path(__file__).resolve().parents[1] / "app"
     app = use(f"app:{app_dir}", api=api, silent="deep")
     assert app is not None and app.api is not None
-    assert app.api.T.sectionTypes == ("passage",)
+    assert tuple(app.api.T.sectionTypes) == ("passage",)
     assert app.context.exampleSection == source_record_id
     assert app.context.docPage == "research/native-query-examples"
     assert app.context.textFormat == "text-orig-full"
