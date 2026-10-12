@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "src/opengreek_tf/native_composer.py"
+      - "app/config.yaml"
+      - "tests/test_standard_advanced_app.py"
       - "tests/test_native_composer.py"
       - "docs/research/generic-native-composer.md"
       - ".github/workflows/generic-native-composer-pinned.yml"
@@ -50,6 +52,7 @@ jobs:
           from dataclasses import asdict
           from pathlib import Path
           from tf.fabric import Fabric
+          from tf.app import use
 
           from opengreek_tf.source import verify_source
           from opengreek_tf.native_composer import (
@@ -136,8 +139,21 @@ jobs:
           assert len(api.F.otype.s("passage")) == 2
           assert not api.F.otype.s("word")
           assert api.T.text(api.F.otype.s("passage")[0], fmt="text-orig-full") == chosen[0].text
+
+          # Exercise the *standard* advanced app against genuine pinned Greek
+          # source and metadata, with no invented book/chapter/verse labels.
+          advanced = use(f"app:{Path('app').resolve()}", api=api, silent="deep")
+          assert advanced is not None and advanced.api is not None
+          original_passage = api.F.otype.s("passage")[0]
+          assert advanced.sectionStrFromNode(original_passage) == records[1].source_record_id
+          assert advanced.nodeFromSectionStr(records[1].source_record_id) == original_passage
+          assert advanced.api.T.text(original_passage, fmt="text-orig-full") == chosen[0].text
+          html = advanced.plain(original_passage, _asString=True)
+          assert isinstance(html, str) and chosen[0].text.split()[0] in html
+          assert not advanced.api.F.otype.s("word")
           print(json.dumps({
-              "pinned_mixed_composition": "PASS", **asdict(stats),
+              "pinned_mixed_composition": "PASS",
+              "standard_advanced_app_pinned": "PASS", **asdict(stats),
               "build_and_loaded_validation_seconds": build_time,
               "native_tf_bytes": sum(p.stat().st_size for p in out.glob("*.tf")),
           }, sort_keys=True))

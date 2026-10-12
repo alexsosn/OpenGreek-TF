@@ -66,7 +66,37 @@ Network access belongs to acquisition only. Later conversion commands receive a 
 
 ## Text-Fabric app / web browser
 
-A standard Text-Fabric advanced app under `app/` is part of the release. Its section and text-format configuration is intentionally deferred until the native graph schema is frozen. The standard TF browser is the default web application; a custom web stack needs a demonstrated requirement.
+A standard Text-Fabric advanced app under `app/` is part of the release.
+Its **current pre-release source-record section** uses the exact physical
+`source_record_id` of genuine primary passages and the existing
+`text-orig-full` Greek format. It does **not** yet claim a final
+author/work/chapter/verse hierarchy, crosswalks, secondary alignment, or
+complete-corpus browser support. The standard TF browser remains the intended
+web application; there is no custom web stack.
+
+After generating native TF, load the local standard app without downloading
+a corpus or invoking a custom viewer:
+
+```python
+from pathlib import Path
+from tf.fabric import Fabric
+from tf.app import use
+
+data = Path("./generated/native")
+fabric = Fabric(locations=str(data), silent="deep")
+found = fabric.explore(silent="deep")
+api = fabric.load(
+    " ".join(sorted(set(found["nodes"]) | set(found["edges"]))),
+    silent="deep",
+)
+A = use(f"app:{Path('app').resolve()}", api=api, silent="deep")
+p = A.api.F.otype.s("passage")[0]
+print(A.sectionStrFromNode(p), repr(A.api.T.text(p, fmt="text-orig-full")))
+```
+
+A pinned real-source workflow exercises the same advanced-app loading and
+navigation. Its placeholder browser passage is a real original
+`abydenus.fragmenta.jsonl` source occurrence, **not** an inferred citation.
 
 The current pre-release native F/E graph is already queryable without a custom web stack. See the [executable Greek search and provenance examples](docs/research/native-query-examples.md) for literal Greek text, edition/source filters and unaligned witness/paratext discovery; these examples do **not** assert the final ontology or full-corpus release.
 

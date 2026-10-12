@@ -1,7 +1,28 @@
-# Bootstrap advanced-app configuration.
-# Issue #10 finalizes display, sections, formats, and links after #3 freezes the TF schema.
+# Bounded native Text-Fabric advanced app for the current source-record graph.
+# The complete-corpus author/work/citation ontology and browser are NOT frozen.
 apiVersion: 3
+dataDisplay:
+  exampleSection: "data/corpus/abydenus.fragmenta.jsonl:1"
+  exampleSectionHtml: "<code>data/corpus/abydenus.fragmenta.jsonl:1</code>"
+  textFormat: text-orig-full
+docs:
+  docBase: https://github.com/alexsosn/OpenGreek-TF/blob/main/docs
+  docExt: .md
+  docPage: research/native-query-examples
+  featureBase: "{docBase}/research/native-query-examples{docExt}"
+  featurePage: research/native-query-examples
 provenanceSpec:
   corpus: OpenGreek-TF = Open Greek Corpus in Text-Fabric
   version: 0.1.0-dev
+typeDisplay:
+  passage:
+    label: "{source_record_id}"
+    template: "{source_record_id}"
+    style: orig
+  metadataRecord:
+    hidden: true
+    label: "{source_record_id}"
+  sourceFact:
+    hidden: true
+    label: "{fact_kind}"
 writing: grc
