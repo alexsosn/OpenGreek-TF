@@ -6,6 +6,7 @@ import gc
 import weakref
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -196,7 +197,7 @@ def test_writer_releases_complete_preflight_graph_set_before_cv_walk(
         refs.extend(weakref.ref(g) for g in wrapped)
         return wrapped
 
-    def inspected_walk(self: object, *args: object, **kwargs: object) -> bool:
+    def inspected_walk(self: Any, *args: Any, **kwargs: Any) -> Any:
         gc.collect()
         assert len(refs) == len(records)
         assert all(ref() is None for ref in refs), (
