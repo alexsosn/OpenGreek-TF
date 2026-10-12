@@ -58,6 +58,8 @@ def test_standard_local_tf_app_navigates_actual_native_source_record(
     assert len(passages) == 1
     passage = passages[0]
     assert app.api.T.text(passage, fmt="text-orig-full") == original
+    rendered_html = app.plain(passage, _asString=True)
+    assert isinstance(rendered_html, str) and "λόγος" in rendered_html
     assert app.sectionStrFromNode(passage) == record_id
     assert app.nodeFromSectionStr(record_id) == passage
     assert not app.api.F.otype.s("word")
