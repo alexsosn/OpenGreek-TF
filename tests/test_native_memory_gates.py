@@ -6,8 +6,10 @@ import gc
 import weakref
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
+from tf.convert.walker import CV  # type: ignore[import-untyped]
 
 import opengreek_tf.native_composer as composer
 from opengreek_tf.fact_graph import FactGraph
@@ -168,3 +170,44 @@ def test_postwrite_conservation_rejects_bool_int_equal_values(
     # The public independent validator must also reject the same forged data.
     with pytest.raises(NativeComposeError, match="conservation"):
         validate_native_records(records, out)
+
+
+def test_writer_releases_complete_preflight_graph_set_before_cv_walk(
+    tmp_path: Path,
+    records: tuple[NativeRecord, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RED: source-checked FactGraphs must not remain held during heavy CV walk.
+
+    Actual TF conversion is still exercised; check object liveness at its
+    entry point, independently of allocator/RSS noise and phase callbacks.
+    """
+    class TrackedGraph(FactGraph):
+        __slots__ = ("__weakref__",)
+
+    refs: list[weakref.ReferenceType[TrackedGraph]] = []
+    original_preflight = composer._preflight
+    original_walk = CV.walk
+
+    def tracked_preflight(value: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
+        graphs = original_preflight(value)
+        wrapped = tuple(
+            TrackedGraph(g.occurrence_key, g.nodes, g.declared_size, g.digest)
+            for g in graphs
+        )
+        refs.extend(weakref.ref(g) for g in wrapped)
+        return wrapped
+
+    def inspected_walk(self: Any, *args: Any, **kwargs: Any) -> Any:
+        gc.collect()
+        assert len(refs) == len(records)
+        assert all(ref() is None for ref in refs), (
+            "the entire preflight FactGraph set is retained during TF conversion"
+        )
+        return original_walk(self, *args, **kwargs)
+
+    monkeypatch.setattr(composer, "_preflight", tracked_preflight)
+    monkeypatch.setattr(CV, "walk", inspected_walk)
+    out = tmp_path / "native"
+    assert write_native_records(records, out).records == len(records)
+    assert read_native_records(out) == records

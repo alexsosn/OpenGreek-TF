@@ -192,8 +192,18 @@ def write_native_records(
     if "fact_int" in available:
         ints.add("fact_int")
 
+    # Preserve exact counts while the validated graphs are available, then
+    # release the complete preflight cache *before* Text-Fabric CV starts
+    # accumulating native nodes/edges. Preflight itself remains fail-closed.
+    # This reduces overlap with CV memory but does not make CV fully streaming.
+    stats = _stats(records, graphs)
+    graphs = ()
+
     def director(cv: CV) -> None:
-        for seq, (record, graph) in enumerate(zip(records, graphs, strict=True), 1):
+        for seq, record in enumerate(records, 1):
+            # Build just this source occurrence's typed graph during CV.walk.
+            # All input records were already fully validated by _preflight.
+            graph = build_fact_graph(record)
             textual = record.text is not None
             owner = cv.node("passage" if textual else "metadataRecord")
             cv.feature(
@@ -266,15 +276,8 @@ def write_native_records(
         raise NativeComposeError("Text-Fabric rejected generic mixed source graph")
     if on_phase is not None:
         on_phase("walk-complete")
-    stats = _stats(records, graphs)
-    # Release the original source FactGraph objects *before* Fabric.load
-    # reconstructs another complete typed graph. The CV.walk director uses
-    # a closure over graphs, so replacing the variable clears the captured
-    # tuple while keeping the closure analyzable by Python/static checkers.
-    graphs = ()
-    # The independent loaded source graph is the postwrite validator.
-    # Do not preflight a *second* full FactGraph collection while the first
-    # is still live; public validate_native_records remains fully independent.
+    # The independent loaded source graph remains the postwrite validator;
+    # public validate_native_records also retains its independent preflight.
     loaded = read_native_records(destination)
     if not _exact_native_records(records, loaded):
         raise NativeComposeError(
