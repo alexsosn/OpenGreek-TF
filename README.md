@@ -98,6 +98,22 @@ A pinned real-source workflow exercises the same advanced-app loading and
 navigation. Its placeholder browser passage is a real original
 `abydenus.fragmenta.jsonl` source occurrence, **not** an inferred citation.
 
+For researchers with an **already generated** native TF graph, the installed CLI
+can search literal Greek and original source facts without requiring the upstream
+checkout or any sidecar:
+
+```bash
+opengreek-tf search-native ./generated/native --kind primary-passage \
+  --contains "λόγος" --max-results 20
+opengreek-tf search-native ./generated/native --kind secondary-witness \
+  --contains "λόγος"
+```
+
+Results are original Unicode JSONL with source-file/ordinal provenance. This is
+an exact, case-sensitive substring scan, not morphological search; `urn` is an
+original source field, not necessarily CTS. TF feature loading/scans can use
+substantial RAM on a complete corpus. See the guide for filters and caveats.
+
 The current pre-release native F/E graph is already queryable without a custom web stack. See the [executable Greek search and provenance examples](docs/research/native-query-examples.md) for literal Greek text, edition/source filters and unaligned witness/paratext discovery; these examples do **not** assert the final ontology or full-corpus release.
 
 ## Agora
