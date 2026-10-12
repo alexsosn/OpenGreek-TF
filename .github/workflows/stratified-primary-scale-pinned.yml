@@ -1,0 +1,148 @@
+name: Pinned stratified epic prose lexicon primary Text-Fabric scale
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/primary_source_profile.py"
+      - "src/opengreek_tf/primary_materializer.py"
+      - "src/opengreek_tf/primary_build_runner.py"
+      - "src/opengreek_tf/native_composer.py"
+      - "src/opengreek_tf/jsonl_conservation.py"
+      - "tests/test_primary_source_profile.py"
+      - "docs/research/stratified-primary-scale.md"
+      - ".github/workflows/stratified-primary-scale-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-real-strata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch exact original Iliad Herodotus and Moeris pinned Greek sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/homerus-epic.ilias.jsonl
+          /data/corpus/herodotus.historiae.jsonl
+          /data/corpus/moeris.lexicon-atticum.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Independently profile exact source then compose and conserve native TF
+        shell: python
+        run: |
+          import json
+          import os
+          import resource
+          import time
+          from dataclasses import asdict
+          from pathlib import Path
+          from tf.fabric import Fabric
+
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.primary_source_profile import profile_primary_sources
+          from opengreek_tf.primary_build_runner import run_isolated_primary_build
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.tf_integrity import native_tf_manifest
+
+          root = Path("upstream")
+          assert verify_source(root).revision == (
+              "338aa27310b3cfe2588a993b4d113b503597d70f"
+          )
+          files = (
+              "data/corpus/homerus-epic.ilias.jsonl",
+              "data/corpus/herodotus.historiae.jsonl",
+              "data/corpus/moeris.lexicon-atticum.jsonl",
+          )
+
+          # Separate strict standard-JSON source profile, not writer/parser IR.
+          t0 = time.perf_counter()
+          source = profile_primary_sources(root, files)
+          profile_s = round(time.perf_counter() - t0, 3)
+          assert source.source_files == 3
+          assert source.source_bytes == 9627790
+          # Independently confirmed from the actual immutable Git blobs;
+          # prevent a silent future subset or source identity substitution.
+          assert source.file_records == (15683, 4335, 11959)
+          assert source.records == sum(source.file_records) == 31977
+          assert source.original_codepoints == 2326212
+          assert source.text_layout_atoms > 125049
+          assert source.total_atoms == source.text_layout_atoms + source.records
+
+          out = Path("native-original-three-strata")
+          t1 = time.perf_counter()
+          build = run_isolated_primary_build(root, files, out)
+          build_wall_s = round(time.perf_counter() - t1, 3)
+          assert build["pid"] != os.getpid()
+          assert build["source_files"] == list(files)
+          stats = build["stats"]
+          assert stats["records"] == stats["text_records"] == source.records
+          assert stats["source_atoms"] == source.source_anchor_atoms
+          assert stats["metadata_records"] == 0
+
+          # Existing independent validator rereads EVERY physical original JSONL
+          # row and native Fabric source facts; it never invokes a writer/adapter.
+          t2 = time.perf_counter()
+          report = validate_native_jsonl_sources(root, files, out)
+          native_verify_s = round(time.perf_counter() - t2, 3)
+          assert report.source_files == source.source_files
+          assert report.records == report.primary_passages == source.records
+          assert report.secondary_witnesses == report.paratext_records == 0
+          assert report.source_fact_nodes == stats["fact_nodes"]
+          assert report.source_unicode_codepoints == source.original_codepoints
+          assert report.original_source_sha256 == source.source_sha256
+
+          # The independent codepoint/run census must also match the actual
+          # Text-Fabric API's complete slot count, NOT just serialized files.
+          fabric = Fabric(locations=str(out), silent="deep")
+          declared = fabric.explore(silent="deep")
+          assert declared and "has_fact" in declared["edges"]
+          api = fabric.load("source_seq record_kind has_fact", silent="deep")
+          assert api
+          assert len(api.F.otype.s("atom")) == source.total_atoms
+          assert len(api.F.otype.s("passage")) == source.records
+          assert len(api.F.otype.s("sourceFact")) == stats["fact_nodes"]
+          assert not api.F.otype.s("metadataRecord") and not api.F.otype.s("word")
+          assert all(api.F.record_kind.v(p) == "primary-passage"
+                     for p in api.F.otype.s("passage"))
+          assert sum(len(api.E.has_fact.f(p)) for p in api.F.otype.s("passage")) + sum(
+              len(api.E.has_fact.f(n)) for n in api.F.otype.s("sourceFact")
+          ) == stats["fact_nodes"]
+
+          manifest = native_tf_manifest(out)
+          assert manifest.canonical_sha256 == build["canonical_sha256"]
+          assert manifest.output_bytes == build["native_tf_bytes"]
+          print(json.dumps({
+              "stratified_native_primary": "PASS",
+              **asdict(source),
+              "loaded_fact_nodes": stats["fact_nodes"],
+              "native_tf_bytes": manifest.output_bytes,
+              "canonical_tf_sha256": manifest.canonical_sha256,
+              "source_profile_seconds": profile_s,
+              "child_build_wall_seconds": build_wall_s,
+              "writer_and_own_validation_seconds": build["build_seconds"],
+              "independent_source_verification_seconds": native_verify_s,
+              "builder_peak_rss_mib": build["peak_rss_mib"],
+              "independent_verifier_peak_rss_mib": round(
+                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 2
+              ),
+          }, sort_keys=True))
