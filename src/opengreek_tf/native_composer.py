@@ -16,6 +16,7 @@ from tf.convert.walker import CV  # type: ignore[import-untyped]
 from tf.fabric import Fabric  # type: ignore[import-untyped]
 
 from .fact_graph import (
+    FactGraph,
     FactGraphError,
     FactNode,
     build_fact_graph,
