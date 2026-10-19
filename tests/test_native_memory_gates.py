@@ -12,7 +12,7 @@ import pytest
 from tf.convert.walker import CV  # type: ignore[import-untyped]
 
 import opengreek_tf.native_composer as composer
-from opengreek_tf.fact_graph import FactGraph
+from opengreek_tf.fact_graph import FactGraph, build_fact_graph
 from opengreek_tf.native_composer import (
     NativeComposeError,
     NativeRecord,
@@ -115,7 +115,7 @@ def test_writer_releases_preflight_graphs_before_independent_fabric_load(
         __slots__ = ("__weakref__",)
 
     tracked: list[weakref.ReferenceType[TrackedGraph]] = []
-    original_build = composer.build_fact_graph
+    original_build = build_fact_graph
     original_reader = composer.read_native_records
 
     def track_build(record: NativeRecord) -> FactGraph:
@@ -185,7 +185,7 @@ def test_writer_releases_each_preflight_graph_before_cv_walk(
         __slots__ = ("__weakref__",)
 
     refs: list[weakref.ReferenceType[TrackedGraph]] = []
-    original_build = composer.build_fact_graph
+    original_build = build_fact_graph
     original_walk = CV.walk
 
     def tracked_build(record: NativeRecord) -> FactGraph:
