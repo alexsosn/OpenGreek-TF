@@ -58,7 +58,7 @@ def test_writer_preflights_once_but_retains_full_loaded_validation(
     calls = 0
     original = composer._preflight
 
-    def tracked(value: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
+    def tracked(value: tuple[NativeRecord, ...]) -> tuple[NativeStats, set[str]]:
         nonlocal calls
         calls += 1
         return original(value)
@@ -109,33 +109,32 @@ def test_writer_releases_preflight_graphs_before_independent_fabric_load(
     records: tuple[NativeRecord, ...],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Emulate weakref-capable immutable graphs to establish object lifetime.
-    # This tests retained references rather than assuming peak RSS decreases.
+    # Track actual FactGraphs at their construction site; there is no longer
+    # a retained _preflight graph tuple to wrap or extend.
     class TrackedGraph(FactGraph):
         __slots__ = ("__weakref__",)
 
     tracked: list[weakref.ReferenceType[TrackedGraph]] = []
-    original_preflight = composer._preflight
+    original_build = composer.build_fact_graph
     original_reader = composer.read_native_records
 
-    def preflight(value: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
-        graphs = original_preflight(value)
-        converted = tuple(
-            TrackedGraph(g.occurrence_key, g.nodes, g.declared_size, g.digest)
-            for g in graphs
+    def track_build(record: NativeRecord) -> FactGraph:
+        g = original_build(record)
+        tracked_graph = TrackedGraph(
+            g.occurrence_key, g.nodes, g.declared_size, g.digest,
         )
-        tracked.extend(weakref.ref(g) for g in converted)
-        return converted
+        tracked.append(weakref.ref(tracked_graph))
+        return tracked_graph
 
     def independent_reader(destination: Path) -> tuple[NativeRecord, ...]:
         gc.collect()
-        assert tracked and all(ref() is None for ref in tracked), (
-            "preflight graph objects should not coexist with the heavy "
-            "independent Text-Fabric reload"
+        assert len(tracked) >= len(records)
+        assert all(ref() is None for ref in tracked), (
+            "source fact graphs should not coexist with heavy independent Fabric reload"
         )
         return original_reader(destination)
 
-    monkeypatch.setattr(composer, "_preflight", preflight)
+    monkeypatch.setattr(composer, "build_fact_graph", track_build)
     monkeypatch.setattr(composer, "read_native_records", independent_reader)
     out = tmp_path / "native"
     assert write_native_records(records, out).records == 2
@@ -172,41 +171,40 @@ def test_postwrite_conservation_rejects_bool_int_equal_values(
         validate_native_records(records, out)
 
 
-def test_writer_releases_complete_preflight_graph_set_before_cv_walk(
+def test_writer_releases_each_preflight_graph_before_cv_walk(
     tmp_path: Path,
     records: tuple[NativeRecord, ...],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """RED: source-checked FactGraphs must not remain held during heavy CV walk.
+    """Every preflight FactGraph must be dead at native CV entry.
 
-    Actual TF conversion is still exercised; check object liveness at its
-    entry point, independently of allocator/RSS noise and phase callbacks.
+    The real CV.walk executes, and the test instruments graph construction
+    directly instead of assuming preflight returns a full graph collection.
     """
     class TrackedGraph(FactGraph):
         __slots__ = ("__weakref__",)
 
     refs: list[weakref.ReferenceType[TrackedGraph]] = []
-    original_preflight = composer._preflight
+    original_build = composer.build_fact_graph
     original_walk = CV.walk
 
-    def tracked_preflight(value: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
-        graphs = original_preflight(value)
-        wrapped = tuple(
-            TrackedGraph(g.occurrence_key, g.nodes, g.declared_size, g.digest)
-            for g in graphs
+    def tracked_build(record: NativeRecord) -> FactGraph:
+        graph = original_build(record)
+        tracked = TrackedGraph(
+            graph.occurrence_key, graph.nodes, graph.declared_size, graph.digest,
         )
-        refs.extend(weakref.ref(g) for g in wrapped)
-        return wrapped
+        refs.append(weakref.ref(tracked))
+        return tracked
 
     def inspected_walk(self: Any, *args: Any, **kwargs: Any) -> Any:
         gc.collect()
         assert len(refs) == len(records)
         assert all(ref() is None for ref in refs), (
-            "the entire preflight FactGraph set is retained during TF conversion"
+            "a preflight FactGraph is retained during native TF conversion"
         )
         return original_walk(self, *args, **kwargs)
 
-    monkeypatch.setattr(composer, "_preflight", tracked_preflight)
+    monkeypatch.setattr(composer, "build_fact_graph", tracked_build)
     monkeypatch.setattr(CV, "walk", inspected_walk)
     out = tmp_path / "native"
     assert write_native_records(records, out).records == len(records)
