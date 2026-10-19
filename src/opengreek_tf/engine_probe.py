@@ -72,7 +72,7 @@ def probe_native(corpus: Path, *, engine: str) -> EngineProbe:
         raise ValueError("probe requires an existing native TF feature directory")
     module_name = "tf.fabric" if engine == "tf" else "cfabric"
     dist_name = "text-fabric" if engine == "tf" else "context-fabric"
-    fabric = getattr(importlib.import_module(module_name), "Fabric")
+    fabric: Any = importlib.import_module(module_name).__dict__["Fabric"]
     start = time.perf_counter()
     loader = fabric(locations=str(corpus), silent="deep")
     discovered: dict[str, list[str]] | None = loader.explore(silent="deep")
