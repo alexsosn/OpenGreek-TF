@@ -70,6 +70,11 @@ jobs:
           assert stats.records == checked.records == checked.primary_passages == 232
           assert checked.source_fact_nodes == stats.fact_nodes == 1642
           assert checked.source_unicode_codepoints == 131738
+          from opengreek_tf.tf_integrity import native_tf_manifest
+          Path("native-reference-sha256.txt").write_text(
+              native_tf_manifest(Path("native-experiment")).raw_sha256 + "\\n",
+              encoding="ascii",
+          )
           print("reference_original_source_conservation=PASS")
       - name: Measure engines independently, compile CF cache, then warm-load it
         shell: bash
@@ -83,6 +88,13 @@ jobs:
         run: |
           import json
           from pathlib import Path
+          from opengreek_tf.tf_integrity import native_tf_manifest
+          original_raw_sha256 = Path("native-reference-sha256.txt").read_text(
+              encoding="ascii",
+          ).strip()
+          assert native_tf_manifest(Path("native-experiment")).raw_sha256 == original_raw_sha256, (
+              "CF probe or derived cache altered original native .tf feature bytes"
+          )
           reports = {
               name: json.loads(Path(name + ".json").read_text(encoding="utf-8"))
               for name in ("reference", "cf-cold", "cf-warm")
