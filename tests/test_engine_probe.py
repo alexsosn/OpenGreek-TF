@@ -86,3 +86,12 @@ def test_probe_rejects_missing_corpus_or_bad_engine(tmp_path: Path) -> None:
         probe_native(tmp_path / "missing", engine="tf")
     with pytest.raises(ValueError):
         probe_native(tmp_path, engine="invisible")
+
+
+def test_probe_rejects_new_edge_feature_in_genuine_native_tf(native: Path) -> None:
+    """A newly added, potentially valued relation is NOT covered by our digest."""
+    original = native / "has_fact.tf"
+    assert original.is_file()
+    (native / "invented_alignment.tf").write_bytes(original.read_bytes())
+    with pytest.raises(ValueError, match="unsupported native edge"):
+        probe_native(native, engine="tf")
