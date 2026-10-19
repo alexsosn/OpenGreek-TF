@@ -64,6 +64,35 @@ opengreek-tf verify-source upstream/open-greek-corpus
 
 Network access belongs to acquisition only. Later conversion commands receive a verified local checkout and must not fetch or repair source data.
 
+## Verified selected-file native TF conversion (development)
+
+Once the exact supported Open Greek release has been fetched and verified, use
+the public command to materialize an **explicitly selected** set of primary
+Greek JSONL files into a new directory:
+
+```bash
+opengreek-tf convert-primary upstream/open-greek-corpus \
+  --file data/corpus/abydenus.fragmenta.jsonl \
+  --file data/corpus/achaeus.fragmenta.jsonl \
+  --output generated/selected-primary
+```
+
+File selection is explicit, and repeated `--file` arguments determine source
+record order. Output must not exist and must be **outside** the upstream source
+checkout. The command first verifies the immutable supported Git revision,
+origin, clean checkout and release manifest. Conversion performs **no network
+access**. After native TF creation, the independent stock-JSONL/loaded-Fabric
+validator checks every original source row, text, ID and nested typed fact.
+Only then does the command emit a JSON success record with release revision,
+source selection, counts, original-source digest and canonical TF digest.
+
+This is a development **subset** workflow, not the release `convert` contract:
+the current writer retains selected records in memory, does not automatically
+materialize all 1,970,947 primary passages or other in-scope scholarly layers,
+and the final work/author/section ontology remains open. A failed run emits no
+success record; inspect/delete a newly created incomplete output directory
+before retrying. Full-corpus and Agora release gates remain under #6/#13/#14.
+
 ## Text-Fabric app / web browser
 
 A standard Text-Fabric advanced app under `app/` is part of the release.
