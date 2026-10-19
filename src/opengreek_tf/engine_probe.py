@@ -1,8 +1,8 @@
-"""Read-only independent TF / Rust Context-Fabric equivalence and load probe.
+"""Independent TF / Rust Context-Fabric native-feature equivalence and load probe.
 
-This module does not enter OpenGreek-TF's writing or authoritative validation
-path. It runs each engine in a separate process to measure the same native F/E
-and literal Greek text surface without inventing an intermediate corpus model.
+This module does not alter native .tf files or the authoritative validation
+path. Context-Fabric may compile a derived .cfr cache beside the native .tf
+files. Separate engine processes measure the same native F/E and Greek text.
 """
 
 from __future__ import annotations
@@ -63,8 +63,8 @@ def _emit(digest: Any, value: object) -> None:
 def probe_native(corpus: Path, *, engine: str) -> EngineProbe:
     """Hash every native node feature, native edge and original passage text.
 
-    No corpus-mutating operations are performed. Both engines must report the
-    same canonical F/E/T digest before a performance comparison is meaningful.
+    Native .tf files are read (CF may write a derived .cfr cache).
+    Engines must report the same F/E/T digest before speeds can be compared.
     """
     if engine not in ("tf", "cf"):
         raise ValueError(f"unsupported probe engine: {engine}")
@@ -80,8 +80,11 @@ def probe_native(corpus: Path, *, engine: str) -> EngineProbe:
         raise ValueError(f"{engine}: native F/E feature discovery failed")
     node_features = tuple(sorted(set(discovered["nodes"]) - {"otype"}))
     edge_features = tuple(sorted(set(discovered["edges"]) - {"oslots"}))
-    if "has_fact" not in edge_features:
-        raise ValueError(f"{engine}: missing native has_fact source relations")
+    # Future valued edge features cannot be validated by target IDs alone:
+    # EdgeFeature.f(node) may return a mapping of target to edge value.
+    # Our pinned graph has only the explicitly valueless has_fact relation.
+    if edge_features != ("has_fact",):
+        raise ValueError(f"{engine}: unsupported native edge-feature surface: {edge_features}")
     api: Any = loader.load(" ".join((*node_features, *edge_features)), silent="deep")
     if not api:
         raise ValueError(f"{engine}: could not load native graph")
