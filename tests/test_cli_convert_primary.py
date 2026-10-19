@@ -24,7 +24,7 @@ def source(tmp_path: Path) -> Path:
         ("a.jsonl", [
             {"urn": "alpha", "edition": "first", "locus": "I.1",
              "source": "tei", "license": "CC BY-SA", "text": "λόγος  ἀνήρ\n",
-             "notes": [None, True, 0]},
+             "corrections": ["", "ῥ", "ῥ"], "dfhg_flag": False, "page": 0},
             {"urn": "alpha", "edition": "first", "locus": "I.2",
              "source": "tei", "license": "CC BY-SA", "text": ""},
         ]),
