@@ -281,3 +281,73 @@ def test_generic_reader_rejects_known_relation_from_text_atom(
     )
     with pytest.raises(NativeComposeError, match="unexpected.*edge"):
         read_native_records(out)
+
+
+def test_preflight_does_not_retain_every_source_fact_graph(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+) -> None:
+    """RED: real native TF conversion must validate one source graph at a time.
+
+    An independent weakref-friendly proxy tracks graph *lifetimes* instead of
+    mocking CV.walk, the serialized .tf files, or the independent Fabric reader.
+    """
+    import weakref
+    from dataclasses import replace
+    from unittest.mock import patch
+
+    from opengreek_tf.fact_graph import build_fact_graph
+
+    class TrackedGraph:
+        __slots__ = ("underlying", "__weakref__")
+
+        def __init__(self, underlying: object) -> None:
+            self.underlying = underlying
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self.underlying, name)
+
+    live: weakref.WeakSet[TrackedGraph] = weakref.WeakSet()
+    peak = 0
+
+    def tracked(record: NativeRecord) -> TrackedGraph:
+        nonlocal peak
+        graph = TrackedGraph(build_fact_graph(record))
+        live.add(graph)
+        peak = max(peak, len(live))
+        return graph
+
+    original = records[0]
+    selected = tuple(
+        replace(
+            original, ordinal=n, source_record_id=f"source-author-{n}",
+        )
+        for n in range(1, 33)
+    )
+    out = tmp_path / "bounded-preflight"
+    with patch("opengreek_tf.native_composer.build_fact_graph", side_effect=tracked):
+        stats = write_native_records(selected, out)
+        assert validate_native_records(selected, out) == stats
+    assert peak <= 2, f"preflight retained {peak} simultaneous source FactGraphs"
+    assert stats.records == stats.metadata_records == 32
+    assert len(read_native_records(out)) == 32
+    assert not live
+
+
+def test_incremental_preflight_rejects_invalid_last_record_before_output(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+) -> None:
+    """Preserve fail-before-write behavior even for the final source occurrence."""
+    from dataclasses import replace
+
+    valid = tuple(
+        replace(records[0], ordinal=n, source_record_id=f"author-{n}")
+        for n in range(1, 17)
+    )
+    bad = replace(
+        records[0], ordinal=17, source_record_id="author-17",
+        fields=FieldObject((("late_field", "α\\rβ"),)),
+    )
+    out = tmp_path / "bad-tail"
+    with pytest.raises(NativeComposeError, match="carriage return"):
+        write_native_records((*valid, bad), out)
+    assert not out.exists()
