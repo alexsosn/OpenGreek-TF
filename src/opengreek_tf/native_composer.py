@@ -53,11 +53,25 @@ class NativeStats:
     fact_nodes: int
 
 
-def _preflight(records: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
+def _preflight(
+    records: tuple[NativeRecord, ...],
+) -> tuple[NativeStats, set[str]]:
+    """Validate each source graph before writing, without retaining all graphs.
+
+    Aggregate only the complete native feature surface and exact fact counts.
+    This preflight is fail-before-output, but records and CV.walk are still
+    all-at-once: it does NOT claim whole-corpus bounded-memory conversion.
+    """
     if not records:
         raise NativeComposeError("cannot compose empty source graph")
     identities: set[tuple[str, int]] = set()
-    graphs: list[FactGraph] = []
+    available = {
+        "atom_kind", "source_file", "source_ordinal", "source_seq",
+        "source_record_id", "record_kind", "fact_count", "fact_digest",
+        "fact_kind", "fact_id", "fact_position", "has_fact",
+    }
+    fact_nodes = 0
+    text_count = 0
     for record in records:
         if (
             type(record.source_file) is not str
@@ -81,30 +95,40 @@ def _preflight(records: tuple[NativeRecord, ...]) -> tuple[FactGraph, ...]:
                 raise NativeComposeError("source passage text differs from typed fact")
             if "\r" in record.text:
                 raise NativeComposeError("carriage return in source passage text")
+            text_count += 1
         try:
             graph = build_fact_graph(record)
             if restore_fact_fields(graph) != record.fields:
                 raise NativeComposeError("typed fact graph failed source conservation")
         except (FactGraphError, KeyError) as exc:
             raise NativeComposeError("invalid native source fact graph") from exc
+        fact_nodes += graph.declared_size
         for node in graph.nodes:
             if (
                 (node.key is not None and "\r" in node.key)
                 or (isinstance(node.value, str) and "\r" in node.value)
             ):
                 raise NativeComposeError("carriage return in native fact")
-        graphs.append(graph)
-    return tuple(graphs)
-
-
-def _stats(records: tuple[NativeRecord, ...], graphs: tuple[FactGraph, ...]) -> NativeStats:
-    text_count = sum(record.text is not None for record in records)
-    return NativeStats(
-        records=len(records),
-        metadata_records=len(records) - text_count,
-        text_records=text_count,
-        source_atoms=len(records),
-        fact_nodes=sum(graph.declared_size for graph in graphs),
+            if node.key is not None:
+                available.add("fact_key")
+            if node.kind == "str":
+                available.add("fact_text")
+            if node.kind in {"int", "bool"}:
+                available.add("fact_int")
+        # A full FactGraph no longer remains reachable across the entire
+        # preflight. The CV director rebuilds at most one validated graph.
+        del graph
+    if text_count:
+        available.add("form")
+    return (
+        NativeStats(
+            records=len(records),
+            metadata_records=len(records) - text_count,
+            text_records=text_count,
+            source_atoms=len(records),
+            fact_nodes=fact_nodes,
+        ),
+        available,
     )
 
 
@@ -167,37 +191,13 @@ def write_native_records(
     """
     if destination.exists() or destination.is_symlink():
         raise NativeComposeError("native TF destination already exists")
-    graphs = _preflight(records)
+    stats, available = _preflight(records)
     if on_phase is not None:
         on_phase("preflight-complete")
-    has_text = any(record.text is not None for record in records)
-    # Avoid retaining a second 252k-element reference vector solely for
-    # feature discovery: inspect each already validated fact in-place.
-    def has_fact(predicate: Callable[[FactNode], bool]) -> bool:
-        return any(predicate(node) for graph in graphs for node in graph.nodes)
-    available = {
-        "atom_kind", "source_file", "source_ordinal", "source_seq",
-        "source_record_id", "record_kind", "fact_count", "fact_digest",
-        "fact_kind", "fact_id", "fact_position", "has_fact",
-    }
-    if has_fact(lambda node: node.key is not None):
-        available.add("fact_key")
-    if has_fact(lambda node: node.kind == "str"):
-        available.add("fact_text")
-    if has_fact(lambda node: node.kind in {"int", "bool"}):
-        available.add("fact_int")
-    if has_text:
-        available.add("form")
+    has_text = stats.text_records > 0
     ints = {"source_ordinal", "source_seq", "fact_count", "fact_id", "fact_position"}
     if "fact_int" in available:
         ints.add("fact_int")
-
-    # Preserve exact counts while the validated graphs are available, then
-    # release the complete preflight cache *before* Text-Fabric CV starts
-    # accumulating native nodes/edges. Preflight itself remains fail-closed.
-    # This reduces overlap with CV memory but does not make CV fully streaming.
-    stats = _stats(records, graphs)
-    graphs = ()
 
     def director(cv: CV) -> None:
         for seq, record in enumerate(records, 1):
@@ -534,10 +534,10 @@ def validate_native_records(
     records: tuple[NativeRecord, ...], destination: Path,
 ) -> NativeStats:
     """Compare source records with independently reloaded native TF features."""
-    graphs = _preflight(records)
+    stats, _ = _preflight(records)
     actual = read_native_records(destination)
     if not _exact_native_records(records, actual):
         raise NativeComposeError(
             f"generic composer conservation failure: {len(records)} vs {len(actual)}"
         )
-    return _stats(actual, graphs)
+    return stats
