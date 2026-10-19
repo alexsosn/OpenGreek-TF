@@ -143,11 +143,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         stats = materialize_primary(snapshot.path, selected, destination)
         # Independent stock-JSON source/loaded-Fabric F/E conservation, not the
         # writer's parser or graph equality. Emit success only after this gate.
-        report = validate_native_jsonl_sources(snapshot.path, selected, destination)
+        validation = validate_native_jsonl_sources(snapshot.path, selected, destination)
         if (
-            report.records != stats.records
-            or report.primary_passages != stats.text_records
-            or report.source_fact_nodes != stats.fact_nodes
+            validation.records != stats.records
+            or validation.primary_passages != stats.text_records
+            or validation.source_fact_nodes != stats.fact_nodes
         ):
             raise ValueError("independent primary source/TF census mismatch")
         manifest = native_tf_manifest(destination)
@@ -156,11 +156,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "revision": snapshot.revision,
             "destination": str(destination),
             "source_files": selected,
-            "records": report.records,
-            "primary_passages": report.primary_passages,
-            "source_fact_nodes": report.source_fact_nodes,
-            "source_unicode_codepoints": report.source_unicode_codepoints,
-            "original_source_sha256": report.original_source_sha256,
+            "records": validation.records,
+            "primary_passages": validation.primary_passages,
+            "source_fact_nodes": validation.source_fact_nodes,
+            "source_unicode_codepoints": validation.source_unicode_codepoints,
+            "original_source_sha256": validation.original_source_sha256,
             "tf_file_count": manifest.tf_file_count,
             "tf_bytes": manifest.output_bytes,
             "canonical_sha256": manifest.canonical_sha256,
