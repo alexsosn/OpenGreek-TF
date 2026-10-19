@@ -72,7 +72,7 @@ jobs:
           assert checked.source_unicode_codepoints == 131738
           from opengreek_tf.tf_integrity import native_tf_manifest
           Path("native-reference-sha256.txt").write_text(
-              native_tf_manifest(Path("native-experiment")).raw_sha256 + "\\n",
+              native_tf_manifest(Path("native-experiment")).raw_sha256 + chr(10),
               encoding="ascii",
           )
           print("reference_original_source_conservation=PASS")
