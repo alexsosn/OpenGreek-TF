@@ -79,8 +79,9 @@ opengreek-tf convert-primary upstream/open-greek-corpus \
 
 File selection is explicit, and repeated `--file` arguments determine source
 record order. Output must not exist and must be **outside** the upstream source
-checkout. The command first verifies the immutable supported Git revision,
-origin, clean checkout and release manifest. Conversion performs **no network
+checkout. The command verifies the immutable supported Git revision, origin, clean
+checkout and release manifest **before and after** conversion; it refuses to
+report success if the source has changed. Conversion performs **no network
 access**. After native TF creation, the independent stock-JSONL/loaded-Fabric
 validator checks every original source row, text, ID and nested typed fact.
 Only then does the command emit a JSON success record with release revision,
