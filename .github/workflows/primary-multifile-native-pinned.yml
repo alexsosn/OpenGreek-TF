@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "src/opengreek_tf/primary_materializer.py"
+      - "src/opengreek_tf/cli.py"
+      - "tests/test_cli_convert_primary.py"
       - "src/opengreek_tf/native_composer.py"
       - "src/opengreek_tf/record_stream.py"
       - "tests/test_primary_materializer.py"
@@ -51,6 +53,7 @@ jobs:
         run: |
           import json
           import resource
+          import subprocess
           import time
           from pathlib import Path
           from tf.fabric import Fabric
@@ -154,10 +157,40 @@ jobs:
               tf.T.text(node, fmt="text-orig-full") for node in tf.F.otype.s("passage")
           ] == [row["text"] for row in raw_rows]
 
+          # User-facing E2E: installed console script → verified immutable source
+          # → actual native TF → independently conserved original JSONL.
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+
+          cli_dir = Path("native-cli-selected")
+          run = subprocess.run([
+              "opengreek-tf", "convert-primary", str(root),
+              "--file", files[0], "--file", files[1],
+              "--output", str(cli_dir),
+          ], capture_output=True, text=True, check=True)
+          result = json.loads(run.stdout)
+          assert result["status"] == "validated-selected-primary"
+          assert result["revision"] == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          assert result["source_files"] == list(files[:2])
+          assert result["records"] == result["primary_passages"] == 58
+          observed = validate_native_jsonl_sources(root, files[:2], cli_dir)
+          assert observed.records == 58
+          assert observed.original_source_sha256 == result["original_source_sha256"]
+          cli_api = Fabric(locations=str(cli_dir), silent="deep").load(
+              "form source_record_id", silent="deep",
+          )
+          assert cli_api
+          assert [cli_api.T.text(n, fmt="text-orig-full") for n in
+                  cli_api.F.otype.s("passage")] == [
+              original["text"] for original in raw_rows[:58]
+          ]
+          assert not cli_api.F.otype.s("word")
+          assert native_tf_manifest(cli_dir).canonical_sha256 == result["canonical_sha256"]
+
           manifest = native_tf_manifest(out)
           assert manifest.tf_file_count >= 17
           print(json.dumps({
               "pinned_primary_multifile": "PASS",
+              "installed_verified_selected_primary_cli": "PASS",
               "source_files": len(files),
               "original_passage_rows": len(raw_rows),
               "source_unicode_characters": sum(len(row["text"]) for row in raw_rows),
