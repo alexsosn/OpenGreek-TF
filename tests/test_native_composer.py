@@ -345,7 +345,7 @@ def test_incremental_preflight_rejects_invalid_last_record_before_output(
     )
     bad = replace(
         records[0], ordinal=17, source_record_id="author-17",
-        fields=FieldObject((("late_field", "α\\rβ"),)),
+        fields=FieldObject((("late_field", "α" + chr(13) + "β"),)),
     )
     out = tmp_path / "bad-tail"
     with pytest.raises(NativeComposeError, match="carriage return"):
