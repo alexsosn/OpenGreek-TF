@@ -150,6 +150,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             or validation.source_fact_nodes != stats.fact_nodes
         ):
             raise ValueError("independent primary source/TF census mismatch")
+        # Confirm the original checkout stayed pinned and clean throughout the
+        # conversion and independently loaded source conservation.
+        final_snapshot = verify_source(snapshot.path, identity=SUPPORTED_RELEASE)
+        if (
+            final_snapshot.revision != snapshot.revision
+            or final_snapshot.path.resolve() != snapshot.path.resolve()
+        ):
+            raise ValueError("upstream source checkout identity changed during conversion")
         manifest = native_tf_manifest(destination)
         print(json.dumps({
             "status": "validated-selected-primary",
