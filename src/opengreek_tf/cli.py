@@ -10,9 +10,12 @@ from pathlib import Path
 
 from . import __version__
 from .audit import audit_source
+from .jsonl_conservation import validate_native_jsonl_sources
+from .primary_materializer import materialize_primary
 from .release import SUPPORTED_RELEASE
 from .research_queries import search_native
 from .source import fetch_source, verify_source
+from .tf_integrity import native_tf_manifest
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +46,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audit.add_argument("source", help="Local Open Greek Git checkout")
     audit.add_argument("--output", required=True, help="Write deterministic audit JSON here")
+
+    convert = subparsers.add_parser(
+        "convert-primary",
+        help="Convert explicitly selected pinned primary JSONL files to validated native TF",
+    )
+    convert.add_argument("source", help="Clean local checkout of the supported upstream release")
+    convert.add_argument(
+        "--file", action="append", required=True, dest="files",
+        metavar="data/corpus/WORK.jsonl",
+        help="Canonical primary source file; repeat to specify deterministic order",
+    )
+    convert.add_argument(
+        "--output", type=Path, required=True,
+        help="New native TF output directory outside the source checkout",
+    )
 
     search = subparsers.add_parser(
         "search-native",
@@ -112,6 +130,41 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        return 0
+
+    if args.command == "convert-primary":
+        snapshot = verify_source(args.source, identity=SUPPORTED_RELEASE)
+        destination = args.output.resolve()
+        if destination.is_relative_to(snapshot.path.resolve()):
+            raise ValueError("native TF output must be outside the source checkout")
+        if args.output.exists() or args.output.is_symlink():
+            raise ValueError("native TF output already exists")
+        selected = tuple(args.files)
+        stats = materialize_primary(snapshot.path, selected, destination)
+        # Independent stock-JSON source/loaded-Fabric F/E conservation, not the
+        # writer's parser or graph equality. Emit success only after this gate.
+        report = validate_native_jsonl_sources(snapshot.path, selected, destination)
+        if (
+            report.records != stats.records
+            or report.primary_passages != stats.text_records
+            or report.source_fact_nodes != stats.fact_nodes
+        ):
+            raise ValueError("independent primary source/TF census mismatch")
+        manifest = native_tf_manifest(destination)
+        print(json.dumps({
+            "status": "validated-selected-primary",
+            "revision": snapshot.revision,
+            "destination": str(destination),
+            "source_files": selected,
+            "records": report.records,
+            "primary_passages": report.primary_passages,
+            "source_fact_nodes": report.source_fact_nodes,
+            "source_unicode_codepoints": report.source_unicode_codepoints,
+            "original_source_sha256": report.original_source_sha256,
+            "tf_file_count": manifest.tf_file_count,
+            "tf_bytes": manifest.output_bytes,
+            "canonical_sha256": manifest.canonical_sha256,
+        }, sort_keys=True))
         return 0
 
     if args.command == "search-native":
