@@ -60,7 +60,11 @@ def test_public_primary_cli_reloads_all_original_greek_and_typed_facts(
     output = tmp_path / "generated"
     with patch("opengreek_tf.cli.verify_source", return_value=_snapshot(source)) as verify:
         assert main(_args(source, output)) == 0
-    verify.assert_called_once_with(str(source), identity=SUPPORTED_RELEASE)
+    assert verify.call_count == 2
+    assert verify.call_args_list[0].args == (str(source),)
+    assert verify.call_args_list[1].args == (source.resolve(),)
+    assert all(call.kwargs == {"identity": SUPPORTED_RELEASE}
+               for call in verify.call_args_list)
     result = json.loads(capsys.readouterr().out)
     assert result["revision"] == SUPPORTED_RELEASE.commit
     assert result["source_files"] == [
