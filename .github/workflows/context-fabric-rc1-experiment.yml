@@ -1,0 +1,112 @@
+name: Experimental Rust Context-Fabric native Greek equivalence
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/engine_probe.py"
+      - "tests/test_engine_probe.py"
+      - "docs/research/context-fabric-rc1-compat.md"
+      - ".github/workflows/context-fabric-rc1-experiment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-native-engine-equivalence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install reference TF and experimental Rust CF
+        run: |
+          python -m pip install -e .
+          python -m pip install --pre 'context-fabric==0.6.0rc1'
+          python -c 'from cfabric import Fabric; from tf.fabric import Fabric as Reference; print("TF and CF imports OK")'
+      - name: Fetch four original pinned Greek JSONL sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/abydenus.fragmenta.jsonl
+          /data/corpus/achaeus.fragmenta.jsonl
+          /data/corpus/acta-barnabae.acta-barnabae.jsonl
+          /data/corpus/acta-philippi.acta-philippi.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Build native Greek via reference TF, validate exact raw source
+        shell: python
+        run: |
+          from pathlib import Path
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.primary_materializer import materialize_primary
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+
+          root = Path("upstream")
+          assert verify_source(root).revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          files = (
+              "data/corpus/abydenus.fragmenta.jsonl",
+              "data/corpus/achaeus.fragmenta.jsonl",
+              "data/corpus/acta-barnabae.acta-barnabae.jsonl",
+              "data/corpus/acta-philippi.acta-philippi.jsonl",
+          )
+          stats = materialize_primary(root, files, Path("native-experiment"))
+          checked = validate_native_jsonl_sources(root, files, Path("native-experiment"))
+          assert stats.records == checked.records == checked.primary_passages == 232
+          assert checked.source_fact_nodes == stats.fact_nodes == 1642
+          assert checked.source_unicode_codepoints == 131738
+          print("reference_original_source_conservation=PASS")
+      - name: Measure engines independently, compile CF cache, then warm-load it
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m opengreek_tf.engine_probe --engine tf --corpus native-experiment > reference.json
+          python -m opengreek_tf.engine_probe --engine cf --corpus native-experiment > cf-cold.json
+          python -m opengreek_tf.engine_probe --engine cf --corpus native-experiment > cf-warm.json
+      - name: Assert all native F/E/T values match reference; report actual metrics
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          reports = {
+              name: json.loads(Path(name + ".json").read_text(encoding="utf-8"))
+              for name in ("reference", "cf-cold", "cf-warm")
+          }
+          for name, data in reports.items():
+              assert data["passages"] == 232, (name, data)
+              assert data["fact_nodes"] == 1642, (name, data)
+              assert data["source_text_codepoints"] == 131738, (name, data)
+              assert data["metadata_records"] == 0, (name, data)
+          invariant = (
+              "canonical_sha256", "nodes", "passages", "metadata_records",
+              "atoms", "fact_nodes", "source_text_codepoints",
+              "node_features", "edge_features",
+          )
+          for name in ("cf-cold", "cf-warm"):
+              for key in invariant:
+                  assert reports[name][key] == reports["reference"][key], (
+                      "CF native F/E/T mismatch", name, key,
+                      reports[name][key], reports["reference"][key],
+                  )
+          print(json.dumps({
+              "experimental_cfabric_rc1_native_equivalence": "PASS",
+              "pinned_original_passages": 232,
+              "reference": reports["reference"],
+              "cf_cold": reports["cf-cold"],
+              "cf_warm": reports["cf-warm"],
+          }, ensure_ascii=False, sort_keys=True))
