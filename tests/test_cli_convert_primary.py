@@ -146,3 +146,18 @@ def test_public_primary_cli_requires_explicit_file_selection_and_output(
     with pytest.raises(SystemExit) as missing_output:
         main(["convert-primary", str(source), "--file", "data/corpus/a.jsonl"])
     assert missing_output.value.code == 2
+
+
+def test_public_primary_cli_rechecks_pinned_checkout_before_reporting_success(
+    source: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Independent TF equality must not certify a checkout dirtied during conversion."""
+    output = tmp_path / "converted-before-mutation-is-detected"
+    with patch(
+        "opengreek_tf.cli.verify_source",
+        side_effect=[_snapshot(source), SourceAcquisitionError("checkout became dirty")],
+    ) as verify:
+        with pytest.raises(SourceAcquisitionError, match="dirty"):
+            main(_args(source, output))
+    assert verify.call_count == 2
+    assert capsys.readouterr().out == ""
