@@ -86,12 +86,12 @@ def _preflight(
             raise NativeComposeError("duplicate physical source occurrence")
         identities.add((record.source_file, record.ordinal))
         for value in (record.source_file, record.source_record_id, record.record_kind):
-            if "\\r" in value:
+            if "\r" in value:
                 raise NativeComposeError("carriage return in source identity")
         if record.text is not None:
             if type(record.text) is not str or record.fields.require("text") != record.text:
                 raise NativeComposeError("source passage text differs from typed fact")
-            if "\\r" in record.text:
+            if "\r" in record.text:
                 raise NativeComposeError("carriage return in source passage text")
             text_count += 1
         try:
@@ -103,8 +103,8 @@ def _preflight(
         fact_nodes += graph.declared_size
         for node in graph.nodes:
             if (
-                (node.key is not None and "\\r" in node.key)
-                or (isinstance(node.value, str) and "\\r" in node.value)
+                (node.key is not None and "\r" in node.key)
+                or (isinstance(node.value, str) and "\r" in node.value)
             ):
                 raise NativeComposeError("carriage return in native fact")
             if node.key is not None:
