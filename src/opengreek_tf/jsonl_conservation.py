@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .native_composer import NativeComposeError, read_native_records
+from .native_composer import NativeComposeError, NativeRecord, iter_native_records
 from .record_stream import FieldArray, FieldObject, FieldValue
 
 _KINDS = {
@@ -134,14 +135,19 @@ def validate_native_jsonl_sources(
         physical_ids.add(physical)
         checked_files.append((relative, resolved_source, _KINDS[path.parts[1]][0]))
 
-    # This loader derives source fields and identities directly from native
-    # Fabric F/E, checking every fact edge, digest, text slot and node census.
-    try:
-        loaded = iter(read_native_records(destination))
-    except (NativeComposeError, OSError) as exc:
-        raise JsonlConservationError(
-            "native TF source graph failed independent loaded validation"
-        ) from exc
+    # The independent loaded TF reader preserves all native F/E integrity
+    # checks, including final orphan/fabricated feature checks. Streaming its
+    # records avoids retaining a second all-source tuple while stock original
+    # JSONL is read one physical row at a time. Always exhaust the iterator.
+    def checked_loaded() -> Iterator[NativeRecord]:
+        try:
+            yield from iter_native_records(destination)
+        except (NativeComposeError, OSError) as exc:
+            raise JsonlConservationError(
+                "native TF source graph failed independent loaded validation"
+            ) from exc
+
+    loaded = checked_loaded()
     digest = hashlib.sha256()
     counts = {"primary-passage": 0, "secondary-witness": 0, "paratext-record": 0}
     fact_count = 0

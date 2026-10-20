@@ -7,7 +7,7 @@ The loader independently reconstructs every source graph from F/E.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -158,12 +158,15 @@ def _exact_field_values(a: FieldValue, b: FieldValue) -> bool:
 
 
 def _exact_native_records(
-    expected: tuple[NativeRecord, ...], loaded: tuple[NativeRecord, ...],
+    expected: tuple[NativeRecord, ...], loaded: Iterable[NativeRecord],
 ) -> bool:
     """Strict source equality without making a second full FactGraph set."""
-    if len(expected) != len(loaded):
-        return False
-    for a, b in zip(expected, loaded, strict=True):
+    actual = iter(loaded)
+    for a in expected:
+        try:
+            b = next(actual)
+        except StopIteration:
+            return False
         if (
             a.source_file != b.source_file
             or type(a.ordinal) is not type(b.ordinal)
@@ -175,7 +178,9 @@ def _exact_native_records(
             or not _exact_field_values(a.fields, b.fields)
         ):
             return False
-    return True
+    # Explicit extra next() forces final global Fabric integrity checks on
+    # validating generators, rather than falsely returning success early.
+    return next(actual, None) is None
 
 
 def write_native_records(
@@ -278,10 +283,9 @@ def write_native_records(
         on_phase("walk-complete")
     # The independent loaded source graph remains the postwrite validator;
     # public validate_native_records also retains its independent preflight.
-    loaded = read_native_records(destination)
-    if not _exact_native_records(records, loaded):
+    if not _exact_native_records(records, iter_native_records(destination)):
         raise NativeComposeError(
-            f"generic composer conservation failure: {len(records)} vs {len(loaded)}"
+            f"generic composer conservation failure for {len(records)} source rows"
         )
     if on_phase is not None:
         on_phase("load-validated")
@@ -289,7 +293,18 @@ def write_native_records(
 
 
 def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
-    """Independently load TF and reconstruct source records, including null."""
+    """Return complete independently loaded native source records."""
+    return tuple(iter_native_records(destination))
+
+
+def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
+    """Validate actual native F/E and yield original typed source rows in order.
+
+    Full proof requires EXHAUSTING the iterator: final global feature/edge
+    placement, orphan and fabricated node checks run after its last yield.
+    The writer and source verifier always exhaust it before reporting success.
+    Native TF Fabric features remain loaded, not streamed from disk.
+    """
     fabric = Fabric(locations=str(destination), silent="deep")
     discovered = fabric.explore(silent="deep")
     if not discovered:
@@ -320,7 +335,16 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
     )
     if not api:
         raise NativeComposeError("cannot load native typed source graph")
-    roots = tuple(api.F.otype.s("passage")) + tuple(api.F.otype.s("metadataRecord"))
+    # Native otype groups nodes by kind, not physical source order. Sorting
+    # genuine root IDs by explicit source_seq preserves interleaved metadata,
+    # primary and witness occurrences without accumulating all restored rows.
+    roots = tuple(sorted(
+        (*api.F.otype.s("passage"), *api.F.otype.s("metadataRecord")),
+        key=lambda n: (
+            api.F.source_seq.v(n)
+            if type(api.F.source_seq.v(n)) is int else -1
+        ),
+    ))
     # The known otext file can carry an extra forged research-facing format
     # or unsupported section/structure declarations without changing any
     # source fact. Check those declarations independently of T.text equality.
@@ -353,9 +377,7 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
     used_atoms: set[int] = set()
     used_facts: set[int] = set()
     used_ids: set[tuple[str, int]] = set()
-    seqs: dict[int, NativeRecord] = {}
-
-    for root in roots:
+    for expected_seq, root in enumerate(roots, 1):
         is_text = api.F.otype.v(root) == "passage"
         filename = api.F.source_file.v(root)
         ordinal = api.F.source_ordinal.v(root)
@@ -367,7 +389,7 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
         if (
             type(filename) is not str or not filename
             or type(ordinal) is not int or ordinal < 1
-            or type(seq) is not int or seq < 1 or seq in seqs
+            or type(seq) is not int or seq != expected_seq
             or type(record_id) is not str or not record_id
             or type(record_kind) is not str or not record_kind
             or type(count) is not int or count < 1
@@ -479,7 +501,7 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
             source_text = None
             if "form" in declared and api.F.form.v(anchor) is not None:
                 raise NativeComposeError("metadata atom acquired lexical form")
-        seqs[seq] = NativeRecord(
+        yield NativeRecord(
             filename, ordinal, record_id, record_kind, fields, source_text,
         )
 
@@ -525,9 +547,8 @@ def read_native_records(destination: Path) -> tuple[NativeRecord, ...]:
         if any(target not in fact_handles for target in targets):
             raise NativeComposeError("unexpected native source-fact edge target")
 
-    if set(seqs) != set(range(1, len(seqs) + 1)):
-        raise NativeComposeError("missing or duplicated global source order")
-    return tuple(seqs[i] for i in range(1, len(seqs) + 1))
+    # Contiguous global order is established while yielding, including
+    # duplicate/missing/noninteger source_seq. All global checks ran above.
 
 
 def validate_native_records(
@@ -535,9 +556,8 @@ def validate_native_records(
 ) -> NativeStats:
     """Compare source records with independently reloaded native TF features."""
     stats, _ = _preflight(records)
-    actual = read_native_records(destination)
-    if not _exact_native_records(records, actual):
+    if not _exact_native_records(records, iter_native_records(destination)):
         raise NativeComposeError(
-            f"generic composer conservation failure: {len(records)} vs {len(actual)}"
+            f"generic composer conservation failure for {len(records)} source rows"
         )
     return stats
