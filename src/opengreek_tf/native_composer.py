@@ -257,7 +257,7 @@ def write_native_record_factory(
                 raise NativeComposeError(
                     "source passage text differs from typed fact during TF replay"
                 )
-            if textual and "\r" in record.text:
+            if record.text is not None and "\r" in record.text:
                 raise NativeComposeError("carriage return in replayed source passage text")
             _update_source_signature(replay_signature, record, graph)
             owner = cv.node("passage" if textual else "metadataRecord")
