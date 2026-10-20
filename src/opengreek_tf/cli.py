@@ -18,6 +18,9 @@ from .source import fetch_source, verify_source
 from .text_materializer import materialize_texts, select_all_text_files
 from .tf_integrity import native_tf_manifest
 
+# Complete pinned release census, independently established from all 4,447 files.
+_PINNED_ALL_TEXT_ROWS = (SUPPORTED_RELEASE.passages, 307_085, 15_958)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -230,10 +233,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         ):
             raise ValueError("independent original-text/native-TF conservation mismatch")
         if args.all and (
-            validation.primary_passages != SUPPORTED_RELEASE.passages
-            or validation.secondary_witnesses != 307_085
-            or validation.paratext_records != 15_958
-            or stats.records != 2_293_990
+            (
+                validation.primary_passages,
+                validation.secondary_witnesses,
+                validation.paratext_records,
+            ) != _PINNED_ALL_TEXT_ROWS
+            or stats.records != sum(_PINNED_ALL_TEXT_ROWS)
         ):
             raise ValueError("complete pinned original-text row census mismatch")
 
