@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: {{ github.workflow }}-{{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -140,11 +140,11 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: upstream/.git/objects
-          key: {{ steps.scope.outputs.key }}
+          key: ${{ steps.scope.outputs.key }}
       - name: Fetch and verify the pinned complete original source family scope
         shell: bash
         env:
-          SOURCE_CACHE_HIT: {{ steps.objects.outputs.cache-hit }}
+          SOURCE_CACHE_HIT: ${{ steps.objects.outputs.cache-hit }}
         run: |
           set -euo pipefail
           python -m opengreek_tf.ci_source_cache checkout upstream \
