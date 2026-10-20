@@ -15,6 +15,7 @@ from .primary_materializer import materialize_primary
 from .release import SUPPORTED_RELEASE
 from .research_queries import search_native
 from .source import fetch_source, verify_source
+from .text_materializer import materialize_texts, select_all_text_files
 from .tf_integrity import native_tf_manifest
 
 
@@ -60,6 +61,28 @@ def build_parser() -> argparse.ArgumentParser:
     convert.add_argument(
         "--output", type=Path, required=True,
         help="New native TF output directory outside the source checkout",
+    )
+
+    convert_texts = subparsers.add_parser(
+        "convert-texts",
+        help="Convert selected or all pinned primary, secondary and paratext originals",
+    )
+    convert_texts.add_argument(
+        "source", help="Clean Git checkout of exact supported Open Greek release",
+    )
+    text_selection = convert_texts.add_mutually_exclusive_group(required=True)
+    text_selection.add_argument(
+        "--file", action="append", dest="files",
+        metavar="data/{corpus,corpus_secondary,paratext}/SOURCE.jsonl",
+        help="Original JSONL file; repeat to determine source order",
+    )
+    text_selection.add_argument(
+        "--all", action="store_true",
+        help="All 4,447 original textual files (memory-intensive, unreleased scale)",
+    )
+    convert_texts.add_argument(
+        "--output", type=Path, required=True,
+        help="New single native TF graph directory outside the source checkout",
     )
 
     search = subparsers.add_parser(
@@ -173,6 +196,73 @@ def main(argv: Sequence[str] | None = None) -> int:
             "tf_bytes": manifest.output_bytes,
             "canonical_sha256": manifest.canonical_sha256,
         }, sort_keys=True))
+        return 0
+
+    if args.command == "convert-texts":
+        snapshot = verify_source(args.source, identity=SUPPORTED_RELEASE)
+        destination = args.output.resolve()
+        if destination.is_relative_to(snapshot.path.resolve()):
+            raise ValueError("native TF output must be outside the source checkout")
+        if args.output.exists() or args.output.is_symlink():
+            raise ValueError("native TF output already exists")
+
+        if args.all:
+            inventory = select_all_text_files(snapshot.path)
+            selected = inventory.files
+            empty_files = inventory.empty_files
+        else:
+            selected = tuple(args.files)
+            empty_files = frozenset()
+
+        stats = materialize_texts(
+            snapshot.path, selected, destination, allow_empty_files=empty_files,
+        )
+        validation = validate_native_jsonl_sources(
+            snapshot.path, selected, destination, allow_empty_files=empty_files,
+        )
+        if (
+            validation.records != stats.records
+            or validation.primary_passages != stats.text_records
+            or validation.secondary_witnesses + validation.paratext_records
+            != stats.metadata_records
+            or validation.source_fact_nodes != stats.fact_nodes
+            or validation.source_files != len(selected)
+        ):
+            raise ValueError("independent original-text/native-TF conservation mismatch")
+        if args.all and (
+            validation.primary_passages != SUPPORTED_RELEASE.passages
+            or validation.secondary_witnesses != 307_085
+            or validation.paratext_records != 15_958
+            or stats.records != 2_293_990
+        ):
+            raise ValueError("complete pinned original-text row census mismatch")
+
+        # Do not publish success if the source checkout changed during the
+        # conversion or the independently decoded original JSONL verification.
+        final = verify_source(snapshot.path, identity=SUPPORTED_RELEASE)
+        if final.revision != snapshot.revision or final.path.resolve() != snapshot.path.resolve():
+            raise ValueError("original source changed during full-text conversion")
+        manifest = native_tf_manifest(destination)
+        output: dict[str, object] = {
+            "status": "validated-all-texts" if args.all else "validated-selected-texts",
+            "revision": snapshot.revision,
+            "destination": str(destination),
+            "source_file_count": len(selected),
+            "empty_source_files": len(empty_files),
+            "records": validation.records,
+            "primary_passages": validation.primary_passages,
+            "secondary_witnesses": validation.secondary_witnesses,
+            "paratext_records": validation.paratext_records,
+            "source_fact_nodes": validation.source_fact_nodes,
+            "source_unicode_codepoints": validation.source_unicode_codepoints,
+            "original_source_sha256": validation.original_source_sha256,
+            "tf_file_count": manifest.tf_file_count,
+            "tf_bytes": manifest.output_bytes,
+            "canonical_sha256": manifest.canonical_sha256,
+        }
+        if not args.all:
+            output["source_files"] = list(selected)
+        print(json.dumps(output, sort_keys=True))
         return 0
 
     if args.command == "search-native":
