@@ -66,7 +66,7 @@ def _update_source_signature(
     """
     digest.update(json.dumps(
         [record.source_file, record.ordinal, record.source_record_id,
-         record.record_kind, graph.digest],
+         record.record_kind, graph.digest, record.text is not None],
         ensure_ascii=True, separators=(",", ":"),
     ).encode("utf-8"))
     digest.update(b"\n")
@@ -249,8 +249,17 @@ def write_native_record_factory(
             replay_rows = seq
             # Build only this source occurrence during CV.walk.
             graph = build_fact_graph(record)
-            _update_source_signature(replay_signature, record, graph)
             textual = record.text is not None
+            if textual and (
+                type(record.text) is not str
+                or record.fields.require("text") != record.text
+            ):
+                raise NativeComposeError(
+                    "source passage text differs from typed fact during TF replay"
+                )
+            if textual and "\r" in record.text:
+                raise NativeComposeError("carriage return in replayed source passage text")
+            _update_source_signature(replay_signature, record, graph)
             owner = cv.node("passage" if textual else "metadataRecord")
             cv.feature(
                 owner,
