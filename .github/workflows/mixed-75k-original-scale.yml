@@ -1,4 +1,4 @@
-name: Pinned 75k complete-work mixed Greek Text-Fabric scale rung
+name: Pinned 75k whole-file mixed Greek TF scale rung
 
 on:
   pull_request:
@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
           python -m opengreek_tf.ci_source_cache checkout upstream \
             --cache-hit "$SOURCE_CACHE_HIT"
-      - name: Build larger whole-work original Greek + witness + paratext graph
+      - name: Build larger whole-file original Greek + witness + paratext graph
         shell: python
         run: |
           import hashlib
@@ -139,7 +139,7 @@ jobs:
           assert not api.F.otype.s("word")
           assert verify_source(root).revision == revision
           print(json.dumps({
-              "large_complete_work_cross_family_tf": "PASS",
+              "large_whole_file_cross_family_tf": "PASS",
               "independent_stock_original_jsonl_to_loaded_Fabric": "PASS",
               "original_primary_complete_files": primary.file_count,
               "original_primary_passages": primary.primary_rows,
