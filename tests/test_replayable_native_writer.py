@@ -144,3 +144,30 @@ def test_text_materializer_uses_replayable_source_instead_of_eager_writer(
     ]
     assert native[0].text == "ἀρχή  τέλος"
     assert native[1].fields.require("text") == "αλλο"
+
+
+
+@pytest.mark.parametrize("changed_text", ["λόγοι", None])
+def test_replay_refuses_layout_text_mutation_with_unchanged_typed_source_fact(
+    tmp_path: Path, changed_text: str | None,
+) -> None:
+    """Layout must not drift from its independently preserved source fact."""
+    from dataclasses import replace
+
+    calls = 0
+    unchanged = _record(1)
+
+    def rows() -> Iterator[NativeRecord]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield unchanged
+        else:
+            # All typed source fields, source ids and graph digest are unchanged.
+            yield replace(unchanged, text=changed_text)
+
+    with pytest.raises(
+        NativeComposeError, match="changed between preflight|source passage text differs",
+    ):
+        write_native_record_factory(rows, tmp_path / "layout-drift")
+    assert calls >= 2
