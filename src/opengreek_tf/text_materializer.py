@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from .native_composer import NativeRecord, NativeStats, write_native_records
+from .native_composer import NativeRecord, NativeStats, write_native_record_factory
 from .primary_materializer import iter_native_primary
 from .record_stream import DIR_FAMILY
 from .unaligned_materializer import iter_native_unaligned
@@ -139,13 +139,20 @@ def materialize_texts(
 ) -> NativeStats:
     """Write selected original text families into ONE genuine native TF graph.
 
-    Still all-at-once at the source-record and TF CV level. A full 2.29m-row
-    build requires a suitable memory budget and an independent complete run.
+    Native source rows are replayed without materializing a source tuple;
+    Text-Fabric CV's F/E graph remains memory-resident. The full 2.29m-row
+    build still needs a suitable memory budget and independent complete run.
     """
-    records = tuple(
-        iter_native_texts(root, relative_files, allow_empty_files=allow_empty_files)
+    # Reparse the exact same audited original sources independently for
+    # preflight, Text-Fabric walk, and loaded-Fabric source conservation.
+    # The writer proves all three passes agree without retaining a tuple
+    # of the complete original corpus in memory.
+    return write_native_record_factory(
+        lambda: iter_native_texts(
+            root, relative_files, allow_empty_files=allow_empty_files,
+        ),
+        destination,
     )
-    return write_native_records(records, destination)
 
 
 
