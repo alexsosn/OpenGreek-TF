@@ -127,9 +127,18 @@ jobs:
           assert independent.source_fact_nodes == report["source_fact_nodes"]
           assert independent.source_unicode_codepoints == report["source_unicode_codepoints"]
           assert independent.original_source_sha256 == report["original_source_sha256"]
+          # Pin the PREVIOUS RELEASE-WRITER original-source and canonical
+          # native F/E digests: a change must be explicitly reviewed as a
+          # serialization/ontology change, never silently credited to memory.
+          assert independent.original_source_sha256 == (
+              "a644858e5ada9907b8e2c8fe8f28aa574ce6c9f0b9b144667c3c0548600ca806"
+          )
           manifest = native_tf_manifest(output)
-          assert manifest.output_bytes == report["tf_bytes"]
+          assert manifest.output_bytes == report["tf_bytes"] == 215_686_572
           assert manifest.canonical_sha256 == report["canonical_sha256"]
+          assert manifest.canonical_sha256 == (
+              "0b6550e112476ab5a9bc2699abb3c2df68df94c38344f9223e7e4961864f6513"
+          )
           fabric = Fabric(locations=str(output), silent="deep")
           api = fabric.load("source_seq source_record_id record_kind has_fact", silent="deep")
           assert api
