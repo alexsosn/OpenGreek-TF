@@ -16,8 +16,8 @@ from opengreek_tf.native_composer import (
     validate_native_records,
     write_native_records,
 )
-from opengreek_tf.record_stream import FieldArray, FieldObject
 from opengreek_tf.fact_graph import restore_fact_fields
+from opengreek_tf.record_stream import FieldArray, FieldObject
 
 
 @pytest.fixture
