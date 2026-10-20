@@ -69,7 +69,7 @@ def _update_source_signature(
          record.record_kind, graph.digest],
         ensure_ascii=True, separators=(",", ":"),
     ).encode("utf-8"))
-    digest.update(b"\\n")
+    digest.update(b"\n")
 
 
 def _preflight(
