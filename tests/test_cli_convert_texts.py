@@ -218,3 +218,13 @@ def test_all_texts_must_not_succeed_if_checkout_changes_after_conversion(
             main(argv)
     assert verify.call_count == 2
     assert capsys.readouterr().out == ""
+
+
+def test_complete_inventory_rejects_renamed_empty_source_with_same_file_counts(
+    source: Path,
+) -> None:
+    """A complete pin cannot substitute an arbitrary zero-byte witness."""
+    renamed = source / "data/corpus_secondary/other-empty.jsonl"
+    (source / EMPTY).rename(renamed)
+    with pytest.raises(ValueError, match="pinned original empty"):
+        select_all_text_files(source, expected_file_counts=(1, 2, 1))
