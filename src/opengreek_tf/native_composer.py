@@ -558,6 +558,6 @@ def validate_native_records(
     stats, _ = _preflight(records)
     if not _exact_native_records(records, iter_native_records(destination)):
         raise NativeComposeError(
-            f"generic composer conservation failure: {len(records)} vs {len(actual)}"
+            f"generic composer conservation failure for {len(records)} source rows"
         )
     return stats
