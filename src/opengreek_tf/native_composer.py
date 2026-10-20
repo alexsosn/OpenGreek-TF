@@ -7,9 +7,9 @@ The loader independently reconstructs every source graph from F/E.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
 import hashlib
 import json
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -78,8 +78,9 @@ def _preflight(
     """Validate each source graph before writing, without retaining all graphs.
 
     Aggregate only the complete native feature surface and exact fact counts.
-    This preflight is fail-before-output, but records and CV.walk are still
-    all-at-once: it does NOT claim whole-corpus bounded-memory conversion.
+    This preflight rejects invalid final rows before output and retains only
+    a small feature/count/replay digest, not a full source-record tuple.
+    CV.walk remains internally in-memory for all native F/E.
     """
     identities: set[tuple[str, int]] = set()
     available = {
