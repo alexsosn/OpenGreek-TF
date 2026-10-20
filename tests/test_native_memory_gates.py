@@ -117,7 +117,7 @@ def test_writer_releases_preflight_graphs_before_independent_fabric_load(
 
     tracked: list[weakref.ReferenceType[TrackedGraph]] = []
     original_build = build_fact_graph
-    original_reader = composer.read_native_records
+    original_iter = composer.iter_native_records
 
     def track_build(record: NativeRecord) -> FactGraph:
         g = original_build(record)
@@ -127,19 +127,21 @@ def test_writer_releases_preflight_graphs_before_independent_fabric_load(
         tracked.append(weakref.ref(tracked_graph))
         return tracked_graph
 
-    def independent_reader(destination: Path) -> tuple[NativeRecord, ...]:
+    def independent_reader(destination: Path) -> Iterator[NativeRecord]:
+        # The writer uses the validating source stream; hook that actual path,
+        # rather than an unused eager tuple-returning public convenience API.
         gc.collect()
         assert len(tracked) >= len(records)
         assert all(ref() is None for ref in tracked), (
             "source fact graphs should not coexist with heavy independent Fabric reload"
         )
-        return original_reader(destination)
+        yield from original_iter(destination)
 
     monkeypatch.setattr(composer, "build_fact_graph", track_build)
-    monkeypatch.setattr(composer, "read_native_records", independent_reader)
+    monkeypatch.setattr(composer, "iter_native_records", independent_reader)
     out = tmp_path / "native"
     assert write_native_records(records, out).records == 2
-    assert original_reader(out) == records
+    assert read_native_records(out) == records
 
 
 def test_postwrite_conservation_rejects_bool_int_equal_values(
