@@ -1,0 +1,186 @@
+name: Pinned end-user all three text-family conversion and complete inventory
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/text_materializer.py"
+      - "src/opengreek_tf/cli.py"
+      - "src/opengreek_tf/jsonl_conservation.py"
+      - "tests/test_cli_convert_texts.py"
+      - "docs/research/all-text-family-conversion.md"
+      - ".github/workflows/all-text-families-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: {{ github.workflow }}-{{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-mixed-user-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch four original pinned primary, witness and paratext texts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/abydenus.fragmenta.jsonl
+          /data/corpus_secondary/abydenus.fragmenta.jsonl
+          /data/paratext/edition_apparatus.jsonl
+          /data/paratext/latin_in_greek_script.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Installed public CLI produces one source-conserved true TF graph
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.tf_integrity import native_tf_manifest
+          from opengreek_tf.research_queries import search_native
+
+          root = Path("upstream")
+          assert verify_source(root).revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          files = (
+              "data/corpus/abydenus.fragmenta.jsonl",
+              "data/corpus_secondary/abydenus.fragmenta.jsonl",
+              "data/paratext/edition_apparatus.jsonl",
+              "data/paratext/latin_in_greek_script.jsonl",
+          )
+          assert tuple(len((root / name).read_bytes().splitlines()) for name in files) == (
+              6, 47, 56, 57,
+          )
+          destination = Path("generated-validated-mixed-original-TF")
+          cmd = ["opengreek-tf", "convert-texts", str(root)]
+          for relative in files:
+              cmd.extend(["--file", relative])
+          cmd.extend(["--output", str(destination)])
+          completed = subprocess.run(cmd, capture_output=True, text=True, check=True)
+          status = json.loads(completed.stdout)
+          assert status["status"] == "validated-selected-texts"
+          assert status["revision"] == verify_source(root).revision
+          assert status["source_files"] == list(files)
+          assert status["source_file_count"] == 4
+          assert status["empty_source_files"] == 0
+          assert (
+              status["records"], status["primary_passages"],
+              status["secondary_witnesses"], status["paratext_records"],
+          ) == (166, 6, 47, 113)
+          checked = validate_native_jsonl_sources(root, files, destination)
+          assert checked.source_fact_nodes == status["source_fact_nodes"]
+          assert checked.records == 166
+          assert checked.original_source_sha256 == status["original_source_sha256"]
+          manifest = native_tf_manifest(destination)
+          assert manifest.canonical_sha256 == status["canonical_sha256"]
+          assert manifest.output_bytes == status["tf_bytes"]
+          fabric = Fabric(locations=str(destination), silent="deep")
+          api = fabric.load("source_seq source_file source_record_id record_kind has_fact form",
+                            silent="deep")
+          assert api
+          assert len(api.F.otype.s("passage")) == 6
+          assert len(api.F.otype.s("metadataRecord")) == 160
+          assert len(api.F.otype.s("sourceFact")) == checked.source_fact_nodes
+          assert not api.F.otype.s("word")
+          for file, kind in (
+              (files[0], "primary-passage"),
+              (files[1], "secondary-witness"),
+              (files[2], "paratext-record"),
+          ):
+              source = json.loads((root / file).read_text(encoding="utf-8").splitlines()[0])
+              hits = search_native(destination, kind=kind, contains=source["text"],
+                                   max_results=15)
+              assert any(hit.source_file == file and hit.source_ordinal == 1
+                         and hit.text == source["text"] for hit in hits)
+          print(json.dumps({
+              "installed_all_text_family_cli": "PASS",
+              "independent_original_source_to_native_TF": "PASS",
+              "records": checked.records,
+              "primary_passages": checked.primary_passages,
+              "secondary_witnesses": checked.secondary_witnesses,
+              "paratext_records": checked.paratext_records,
+              "typed_original_fact_nodes": checked.source_fact_nodes,
+              "original_source_sha256": checked.original_source_sha256,
+              "native_tf_sha256": manifest.canonical_sha256,
+              "native_tf_bytes": manifest.output_bytes,
+          }, sort_keys=True))
+
+  pinned-complete-text-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Prepare immutable complete original text-family checkout
+        id: scope
+        run: python -m opengreek_tf.ci_source_cache prepare upstream
+      - name: Restore existing verified Git object cache for exact upstream pin
+        id: objects
+        uses: actions/cache/restore@v4
+        with:
+          path: upstream/.git/objects
+          key: {{ steps.scope.outputs.key }}
+      - name: Fetch and verify the pinned complete original source family scope
+        shell: bash
+        env:
+          SOURCE_CACHE_HIT: {{ steps.objects.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          python -m opengreek_tf.ci_source_cache checkout upstream \
+            --cache-hit "$SOURCE_CACHE_HIT"
+      - name: Verify all 4,447 physically present original text files and census
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.text_materializer import select_all_text_files
+          from opengreek_tf.record_stream import iter_family
+
+          root = Path("upstream")
+          assert verify_source(root).revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          inventory = select_all_text_files(root)
+          assert inventory.file_counts == (3909, 533, 5)
+          assert len(inventory.files) == 4447
+          assert inventory.empty_files, "pinned original zero-row witnesses must be accounted"
+          assert all(name.startswith("data/corpus_secondary/")
+                     for name in inventory.empty_files)
+          expected = {
+              "primary": 1_970_947,
+              "secondary": 307_085,
+              "paratext": 15_958,
+          }
+          counts = {family: sum(1 for _ in iter_family(root, family))
+                    for family in expected}
+          assert counts == expected
+          assert sum(counts.values()) == 2_293_990
+          assert verify_source(root).revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          print(json.dumps({
+              "complete_original_text_inventory": "PASS",
+              "all_native_TF_conversion": "NOT_YET_VERIFIED",
+              "source_files": dict(zip(("primary","secondary","paratext"),
+                                       inventory.file_counts)),
+              "original_row_counts": counts,
+              "physically_empty_source_files": sorted(inventory.empty_files),
+          }, sort_keys=True))
