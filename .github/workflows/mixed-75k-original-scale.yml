@@ -1,0 +1,163 @@
+name: Pinned 75k whole-file mixed Greek TF scale rung
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/text_materializer.py"
+      - "tests/test_primary_scale_selector.py"
+      - ".github/workflows/mixed-75k-original-scale.yml"
+      - "docs/research/mixed-75k-original-scale.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  original-cross-family-large-scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the published style CLI without a new writer
+        run: python -m pip install -e .
+      - name: Prepare verified complete immutable original text scope
+        id: scope
+        run: python -m opengreek_tf.ci_source_cache prepare upstream
+      - uses: actions/cache/restore@v4
+        id: objects
+        with:
+          path: upstream/.git/objects
+          key: ${{ steps.scope.outputs.key }}
+      - name: Acquire exact pinned complete 4,447-file original text checkout
+        shell: bash
+        env:
+          SOURCE_CACHE_HIT: ${{ steps.objects.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          python -m opengreek_tf.ci_source_cache checkout upstream \
+            --cache-hit "$SOURCE_CACHE_HIT"
+      - name: Build larger whole-file original Greek + witness + paratext graph
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import resource
+          import subprocess
+          import time
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.text_materializer import (
+              select_all_text_files, select_whole_primary_rung,
+          )
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.tf_integrity import native_tf_manifest
+
+          root = Path("upstream")
+          revision = "338aa27310b3cfe2588a993b4d113b503597d70f"
+          assert verify_source(root).revision == revision
+          all_inventory = select_all_text_files(root)
+          assert all_inventory.file_counts == (3909, 533, 5)
+          assert len(all_inventory.files) == 4447
+          primary = select_whole_primary_rung(
+              root, minimum_rows=75_000, maximum_rows=95_000,
+          )
+          assert 75_000 <= primary.primary_rows <= 95_000
+          selected_secondary = (
+              "data/corpus_secondary/abydenus.fragmenta.jsonl",
+          )
+          selected_paratext = (
+              "data/paratext/edition_apparatus.jsonl",
+              "data/paratext/latin_in_greek_script.jsonl",
+          )
+          files = (*primary.files, *selected_secondary, *selected_paratext)
+          assert len(files) == len(set(files))
+          assert set(files).issubset(all_inventory.files)
+          assert all_inventory.empty_files.isdisjoint(files)
+          assert tuple(
+              len((root / x).read_bytes().splitlines())
+              for x in (*selected_secondary, *selected_paratext)
+          ) == (47, 56, 57)
+          # Selection is a deterministic list of *complete original files*,
+          # never an arbitrary slice of a work or a fabricated source row.
+          sum_primary = sum(
+              sum(1 for _ in (root / x).open("rb")) for x in primary.files
+          )
+          assert sum_primary == primary.primary_rows
+          expected_total = primary.primary_rows + 160
+          selection_sha = hashlib.sha256(
+              ("\n".join(files) + "\n").encode("utf-8")
+          ).hexdigest()
+          command = ["opengreek-tf", "convert-texts", str(root)]
+          for name in files:
+              command.extend(["--file", name])
+          output = Path("native-pinned-mixed-75k")
+          command.extend(["--output", str(output)])
+          start = time.perf_counter()
+          proc = subprocess.run(command, text=True, capture_output=True, check=True)
+          builder_wall = round(time.perf_counter() - start, 3)
+          builder_rss = round(
+              resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024, 2
+          )
+          report = json.loads(proc.stdout)
+          assert report["revision"] == revision
+          assert report["status"] == "validated-selected-texts"
+          assert report["records"] == expected_total
+          assert report["primary_passages"] == primary.primary_rows
+          assert report["secondary_witnesses"] == 47
+          assert report["paratext_records"] == 113
+          assert report["source_file_count"] == len(files)
+          assert report["empty_source_files"] == 0
+          assert report["source_files"] == list(files)
+
+          check_start = time.perf_counter()
+          independent = validate_native_jsonl_sources(root, files, output)
+          check_wall = round(time.perf_counter() - check_start, 3)
+          assert independent.records == expected_total
+          assert independent.primary_passages == primary.primary_rows
+          assert independent.secondary_witnesses == 47
+          assert independent.paratext_records == 113
+          assert independent.source_fact_nodes == report["source_fact_nodes"]
+          assert independent.source_unicode_codepoints == report["source_unicode_codepoints"]
+          assert independent.original_source_sha256 == report["original_source_sha256"]
+          manifest = native_tf_manifest(output)
+          assert manifest.output_bytes == report["tf_bytes"]
+          assert manifest.canonical_sha256 == report["canonical_sha256"]
+          fabric = Fabric(locations=str(output), silent="deep")
+          api = fabric.load("source_seq source_record_id record_kind has_fact", silent="deep")
+          assert api
+          assert len(api.F.otype.s("passage")) == primary.primary_rows
+          assert len(api.F.otype.s("metadataRecord")) == 160
+          assert len(api.F.otype.s("sourceFact")) == independent.source_fact_nodes
+          assert not api.F.otype.s("word")
+          assert verify_source(root).revision == revision
+          print(json.dumps({
+              "large_whole_file_cross_family_tf": "PASS",
+              "independent_stock_original_jsonl_to_loaded_Fabric": "PASS",
+              "original_primary_complete_files": primary.file_count,
+              "original_primary_passages": primary.primary_rows,
+              "original_secondary_rows": 47,
+              "original_paratext_rows": 113,
+              "all_selected_source_files": len(files),
+              "all_selected_rows": independent.records,
+              "source_facts": independent.source_fact_nodes,
+              "source_unicode_codepoints": independent.source_unicode_codepoints,
+              "source_file_selection_sha256": selection_sha,
+              "original_source_sha256": independent.original_source_sha256,
+              "canonical_native_tf_sha256": manifest.canonical_sha256,
+              "native_tf_bytes": manifest.output_bytes,
+              "builder_wall_seconds": builder_wall,
+              "isolated_builder_peak_rss_mib": builder_rss,
+              "independent_verifier_wall_seconds": check_wall,
+              "verifier_process_peak_rss_mib": round(
+                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 2
+              ),
+              "not_a_full_corpus_build": True,
+          }, ensure_ascii=False, sort_keys=True))

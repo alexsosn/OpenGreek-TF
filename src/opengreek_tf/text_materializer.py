@@ -146,3 +146,63 @@ def materialize_texts(
         iter_native_texts(root, relative_files, allow_empty_files=allow_empty_files)
     )
     return write_native_records(records, destination)
+
+
+
+@dataclass(frozen=True, slots=True)
+class PrimaryRung:
+    """Reproducible complete-file original primary benchmark selection."""
+
+    files: tuple[str, ...]
+    primary_rows: int
+
+    @property
+    def file_count(self) -> int:
+        return len(self.files)
+
+
+def select_whole_primary_rung(
+    root: Path, *, minimum_rows: int, maximum_rows: int,
+) -> PrimaryRung:
+    """Choose intact primary JSONL files in canonical filename order.
+
+    The input checkout must first be verified at its immutable Git revision
+    and its *complete* original inventory checked with select_all_text_files.
+    This is deliberately only a benchmark selection, not release completeness.
+    Refuse oversized source files instead of silently dropping source rows.
+    """
+    if (
+        type(minimum_rows) is not int
+        or type(maximum_rows) is not int
+        or minimum_rows < 1
+        or maximum_rows < minimum_rows
+    ):
+        raise ValueError("invalid minimum/maximum original-source row bounds")
+    source = root / "data" / "corpus"
+    if not source.is_dir() or source.is_symlink():
+        raise ValueError("original primary corpus directory is unavailable")
+    files: list[str] = []
+    rows = 0
+    for original in sorted(source.glob("*.jsonl")):
+        relative = original.relative_to(root).as_posix()
+        files.append(relative)
+        # Do not dereference symlinks even temporarily while counting.
+        # Check physical duplicate aliases together when the rung is selected.
+        if original.is_symlink() or not original.is_file():
+            raise ValueError(f"symlink or missing original source file: {relative}")
+        with original.open("rb") as handle:
+            count = sum(1 for _ in handle)
+        if count == 0:
+            raise ValueError(f"empty original primary source file: {relative}")
+        rows += count
+        if rows > maximum_rows:
+            raise ValueError(
+                f"complete original primary source files exceed maximum bound "
+                f"{maximum_rows} at {relative} ({rows} records)"
+            )
+        if rows >= minimum_rows:
+            _validate_files(root, tuple(files))
+            return PrimaryRung(tuple(files), rows)
+    raise ValueError(
+        f"insufficient original primary source rows: {rows} < {minimum_rows}"
+    )
