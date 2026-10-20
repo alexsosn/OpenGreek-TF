@@ -184,3 +184,121 @@ jobs:
               "original_row_counts": counts,
               "physically_empty_source_files": sorted(inventory.empty_files),
           }, sort_keys=True))
+
+
+  pinned-large-cross-family:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - name: Fetch genuinely different large Greek originals and unaligned witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init --quiet
+          git -C upstream remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C upstream sparse-checkout init --no-cone
+          cat > upstream/.git/info/sparse-checkout <<'EOF'
+          /data/corpus_release.json
+          /data/corpus/homerus-epic.ilias.jsonl
+          /data/corpus/herodotus.historiae.jsonl
+          /data/corpus/moeris.lexicon-atticum.jsonl
+          /data/corpus_secondary/abydenus.fragmenta.jsonl
+          /data/paratext/edition_apparatus.jsonl
+          /data/paratext/latin_in_greek_script.jsonl
+          EOF
+          git -C upstream fetch --depth 1 --filter=blob:none origin \
+            338aa27310b3cfe2588a993b4d113b503597d70f
+          git -C upstream checkout --detach FETCH_HEAD
+      - name: Build 32,137 genuine mixed original text rows into ONE TF corpus
+        shell: python
+        run: |
+          import json
+          import resource
+          import subprocess
+          import time
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.tf_integrity import native_tf_manifest
+
+          root = Path("upstream")
+          revision = verify_source(root).revision
+          assert revision == "338aa27310b3cfe2588a993b4d113b503597d70f"
+          files = (
+              "data/corpus/homerus-epic.ilias.jsonl",
+              "data/corpus/herodotus.historiae.jsonl",
+              "data/corpus/moeris.lexicon-atticum.jsonl",
+              "data/corpus_secondary/abydenus.fragmenta.jsonl",
+              "data/paratext/edition_apparatus.jsonl",
+              "data/paratext/latin_in_greek_script.jsonl",
+          )
+          expected_rows = (15683, 4335, 11959, 47, 56, 57)
+          assert tuple(len((root / p).read_bytes().splitlines()) for p in files) == expected_rows
+          dest = Path("native-large-all-text-families")
+          command = ["opengreek-tf", "convert-texts", str(root)]
+          for path in files:
+              command += ["--file", path]
+          command += ["--output", str(dest)]
+          t0 = time.perf_counter()
+          result = subprocess.run(command, capture_output=True, text=True, check=True)
+          builder_wall = round(time.perf_counter() - t0, 3)
+          builder_peak = round(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024, 2)
+          summary = json.loads(result.stdout)
+          assert summary["status"] == "validated-selected-texts"
+          assert summary["source_files"] == list(files)
+          assert summary["revision"] == revision
+          assert summary["source_file_count"] == 6
+          assert summary["empty_source_files"] == 0
+          assert (
+              summary["records"], summary["primary_passages"],
+              summary["secondary_witnesses"], summary["paratext_records"],
+          ) == (32137, 31977, 47, 113)
+          assert summary["source_unicode_codepoints"] == 2_402_648
+
+          # This is the independent writer-free original stock JSONL decoder
+          # against a freshly, separately loaded real Text-Fabric F/E corpus.
+          t1 = time.perf_counter()
+          original = validate_native_jsonl_sources(root, files, dest)
+          verified_wall = round(time.perf_counter() - t1, 3)
+          assert original.records == 32137
+          assert original.source_fact_nodes == summary["source_fact_nodes"]
+          assert original.source_unicode_codepoints == summary["source_unicode_codepoints"]
+          assert original.original_source_sha256 == summary["original_source_sha256"]
+          assert verify_source(root).revision == revision
+          native = native_tf_manifest(dest)
+          assert native.output_bytes == summary["tf_bytes"]
+          assert native.canonical_sha256 == summary["canonical_sha256"]
+          fabric = Fabric(locations=str(dest), silent="deep")
+          api = fabric.load("source_file source_seq record_kind has_fact", silent="deep")
+          assert api
+          assert len(api.F.otype.s("passage")) == 31977
+          assert len(api.F.otype.s("metadataRecord")) == 160
+          assert len(api.F.otype.s("sourceFact")) == original.source_fact_nodes
+          assert len(api.F.otype.s("atom")) == 749750
+          assert not api.F.otype.s("word")
+          print(json.dumps({
+              "large_all_text_families_single_native_TF": "PASS",
+              "independent_stock_original_source_to_Fabric": "PASS",
+              "original_text_records": original.records,
+              "primary_passages": original.primary_passages,
+              "secondary_witnesses": original.secondary_witnesses,
+              "paratext_records": original.paratext_records,
+              "source_fact_nodes": original.source_fact_nodes,
+              "original_unicode_codepoints": original.source_unicode_codepoints,
+              "source_sha256": original.original_source_sha256,
+              "native_tf_sha256": native.canonical_sha256,
+              "native_tf_bytes": native.output_bytes,
+              "isolated_builder_wall_seconds": builder_wall,
+              "isolated_builder_peak_rss_mib": builder_peak,
+              "parent_independent_verifier_seconds": verified_wall,
+              "parent_independent_verifier_peak_rss_mib": round(
+                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 2
+              ),
+          }, sort_keys=True))
