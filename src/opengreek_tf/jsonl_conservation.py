@@ -91,7 +91,8 @@ def _source_fact_count(value: Any) -> int:
 
 
 def validate_native_jsonl_sources(
-    root: Path, relative_files: tuple[str, ...], destination: Path,
+    root: Path, relative_files: tuple[str, ...], destination: Path, *,
+    allow_empty_files: frozenset[str] = frozenset(),
 ) -> JsonlConservationReport:
     """Read source bytes and reload native Text-Fabric to verify every occurrence.
 
@@ -101,6 +102,12 @@ def validate_native_jsonl_sources(
     """
     if not relative_files:
         raise JsonlConservationError("no original JSONL source files selected")
+    # The pinned release contains physically existing zero-record source files.
+    # Their exact path still contributes to the independent source SHA.
+    # Explicit selection must reject empties unless the caller proves that
+    # they are part of a complete, verified original-text inventory.
+    if not allow_empty_files.issubset(relative_files):
+        raise JsonlConservationError("unselected empty-file allowance")
 
     source_root = root.resolve()
     physical_ids: set[tuple[int, int]] = set()
@@ -202,9 +209,13 @@ def validate_native_jsonl_sources(
                 fact_count += _source_fact_count(original)
                 codepoints += len(original["text"])
                 n += 1
-        if file_rows == 0:
+        if file_rows == 0 and relative not in allow_empty_files:
             raise JsonlConservationError(
                 f"empty selected original JSONL source file: {relative}"
+            )
+        if file_rows and relative in allow_empty_files:
+            raise JsonlConservationError(
+                f"original source is nonempty but declared empty: {relative}"
             )
     if next(loaded, None) is not None:
         raise JsonlConservationError("extra original source occurrences in native TF")
