@@ -17,6 +17,7 @@ from opengreek_tf.native_composer import (
     write_native_records,
 )
 from opengreek_tf.record_stream import FieldArray, FieldObject
+from opengreek_tf.fact_graph import restore_fact_fields
 
 
 @pytest.fixture
@@ -62,7 +63,7 @@ def test_native_reader_restores_one_record_at_a_time(
     out = tmp_path / "tf"
     write_native_records(ordered_records, out)
     calls = 0
-    original_restore = composer.restore_fact_fields
+    original_restore = restore_fact_fields
 
     def measured(*args: object, **kwargs: object) -> FieldObject:
         nonlocal calls
