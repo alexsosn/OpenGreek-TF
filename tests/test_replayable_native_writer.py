@@ -171,3 +171,27 @@ def test_replay_refuses_layout_text_mutation_with_unchanged_typed_source_fact(
     ):
         write_native_record_factory(rows, tmp_path / "layout-drift")
     assert calls >= 2
+
+
+
+def test_third_source_replay_cannot_change_original_typed_facts_after_writing(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def rows() -> Iterator[NativeRecord]:
+        nonlocal calls
+        calls += 1
+        yield _record(1, text="ἀρχή" if calls < 3 else "ἄκρη")
+
+    with pytest.raises(NativeComposeError, match="conservation"):
+        write_native_record_factory(rows, tmp_path / "modified-third-pass")
+    assert calls == 3
+
+
+def test_single_use_source_iterator_is_rejected_not_mistaken_for_empty_replay(
+    tmp_path: Path,
+) -> None:
+    source = iter((_record(1),))
+    with pytest.raises(NativeComposeError, match="changed between preflight"):
+        write_native_record_factory(lambda: source, tmp_path / "single-use")
