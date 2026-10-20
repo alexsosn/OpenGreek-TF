@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gc
 import weakref
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -59,7 +59,7 @@ def test_writer_preflights_once_but_retains_full_loaded_validation(
     calls = 0
     original = composer._preflight
 
-    def tracked(value: tuple[NativeRecord, ...]) -> tuple[NativeStats, set[str]]:
+    def tracked(value: Iterable[NativeRecord]) -> tuple[NativeStats, set[str], str]:
         nonlocal calls
         calls += 1
         return original(value)
