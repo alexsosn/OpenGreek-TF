@@ -134,6 +134,7 @@ def test_complete_mode_includes_empty_file_in_original_source_digest(
         patch("opengreek_tf.cli.select_all_text_files",
               side_effect=lambda root: inventory(
                   root, expected_file_counts=(1, 2, 1))),
+        patch("opengreek_tf.cli._PINNED_ALL_TEXT_ROWS", (2, 1, 1)),
     ):
         assert main(["convert-texts", str(source), "--all", "--output", str(out)]) == 0
     report = json.loads(capsys.readouterr().out)
