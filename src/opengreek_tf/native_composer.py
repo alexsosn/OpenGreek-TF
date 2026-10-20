@@ -8,6 +8,8 @@ The loader independently reconstructs every source graph from F/E.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -53,17 +55,32 @@ class NativeStats:
     fact_nodes: int
 
 
+def _update_source_signature(
+    digest: Any, record: NativeRecord, graph: FactGraph,
+) -> None:
+    """Bind original physical order, all typed facts and root kind to a replay.
+
+    The graph digest alone intentionally excludes record_kind and source ID.
+    Source text itself is already an exactly typed field in graph.digest,
+    and preflight requires equality with the passage layout text.
+    """
+    digest.update(json.dumps(
+        [record.source_file, record.ordinal, record.source_record_id,
+         record.record_kind, graph.digest],
+        ensure_ascii=True, separators=(",", ":"),
+    ).encode("utf-8"))
+    digest.update(b"\\n")
+
+
 def _preflight(
-    records: tuple[NativeRecord, ...],
-) -> tuple[NativeStats, set[str]]:
+    records: Iterable[NativeRecord],
+) -> tuple[NativeStats, set[str], str]:
     """Validate each source graph before writing, without retaining all graphs.
 
     Aggregate only the complete native feature surface and exact fact counts.
     This preflight is fail-before-output, but records and CV.walk are still
     all-at-once: it does NOT claim whole-corpus bounded-memory conversion.
     """
-    if not records:
-        raise NativeComposeError("cannot compose empty source graph")
     identities: set[tuple[str, int]] = set()
     available = {
         "atom_kind", "source_file", "source_ordinal", "source_seq",
@@ -72,7 +89,10 @@ def _preflight(
     }
     fact_nodes = 0
     text_count = 0
+    seen = 0
+    signature = hashlib.sha256()
     for record in records:
+        seen += 1
         if (
             type(record.source_file) is not str
             or not record.source_file
@@ -103,6 +123,7 @@ def _preflight(
         except (FactGraphError, KeyError) as exc:
             raise NativeComposeError("invalid native source fact graph") from exc
         fact_nodes += graph.declared_size
+        _update_source_signature(signature, record, graph)
         for node in graph.nodes:
             if (
                 (node.key is not None and "\r" in node.key)
@@ -118,17 +139,20 @@ def _preflight(
         # A full FactGraph no longer remains reachable across the entire
         # preflight. The CV director rebuilds at most one validated graph.
         del graph
+    if not seen:
+        raise NativeComposeError("cannot compose empty source graph")
     if text_count:
         available.add("form")
     return (
         NativeStats(
-            records=len(records),
-            metadata_records=len(records) - text_count,
+            records=seen,
+            metadata_records=seen - text_count,
             text_records=text_count,
-            source_atoms=len(records),
+            source_atoms=seen,
             fact_nodes=fact_nodes,
         ),
         available,
+        signature.hexdigest(),
     )
 
 
@@ -158,7 +182,7 @@ def _exact_field_values(a: FieldValue, b: FieldValue) -> bool:
 
 
 def _exact_native_records(
-    expected: tuple[NativeRecord, ...], loaded: Iterable[NativeRecord],
+    expected: Iterable[NativeRecord], loaded: Iterable[NativeRecord],
 ) -> bool:
     """Strict source equality without making a second full FactGraph set."""
     actual = iter(loaded)
@@ -189,14 +213,27 @@ def write_native_records(
     *,
     on_phase: Callable[[str], None] | None = None,
 ) -> NativeStats:
-    """Compose into native TF; optionally report validated phase boundaries.
+    """Preserve the public complete-record writer and its exact native F/E."""
+    return write_native_record_factory(
+        lambda: iter(records), destination, on_phase=on_phase,
+    )
 
-    on_phase runs after successful preflight, native CV.walk, and independent
-    Fabric.load conservation, respectively. The callback does not change data.
+
+def write_native_record_factory(
+    source_rows: Callable[[], Iterable[NativeRecord]],
+    destination: Path,
+    *,
+    on_phase: Callable[[str], None] | None = None,
+) -> NativeStats:
+    """Build native TF from reproducibly replayable strictly typed source rows.
+
+    Preflight consumes the first entire source pass *before* creating output.
+    CV walks a second pass, and a third compares to the independently loaded
+    native F/E. Does not stream Text-Fabric's own feature and edge maps.
     """
     if destination.exists() or destination.is_symlink():
         raise NativeComposeError("native TF destination already exists")
-    stats, available = _preflight(records)
+    stats, available, preflight_signature = _preflight(source_rows())
     if on_phase is not None:
         on_phase("preflight-complete")
     has_text = stats.text_records > 0
@@ -205,10 +242,13 @@ def write_native_records(
         ints.add("fact_int")
 
     def director(cv: CV) -> None:
-        for seq, record in enumerate(records, 1):
-            # Build just this source occurrence's typed graph during CV.walk.
-            # All input records were already fully validated by _preflight.
+        replay_signature = hashlib.sha256()
+        replay_rows = 0
+        for seq, record in enumerate(source_rows(), 1):
+            replay_rows = seq
+            # Build only this source occurrence during CV.walk.
             graph = build_fact_graph(record)
+            _update_source_signature(replay_signature, record, graph)
             textual = record.text is not None
             owner = cv.node("passage" if textual else "metadataRecord")
             cv.feature(
@@ -260,6 +300,8 @@ def write_native_records(
                     cv.edge(
                         handles[fact.parent_id], handles[fact.node_id], has_fact=None,
                     )
+        if replay_rows != stats.records or replay_signature.hexdigest() != preflight_signature:
+            raise NativeComposeError("original source changed between preflight and TF replay")
 
     output = Fabric(locations=str(destination), silent="deep")
     otext = {
@@ -283,9 +325,9 @@ def write_native_records(
         on_phase("walk-complete")
     # The independent loaded source graph remains the postwrite validator;
     # public validate_native_records also retains its independent preflight.
-    if not _exact_native_records(records, iter_native_records(destination)):
+    if not _exact_native_records(source_rows(), iter_native_records(destination)):
         raise NativeComposeError(
-            f"generic composer conservation failure for {len(records)} source rows"
+            f"generic composer conservation failure for {stats.records} source rows"
         )
     if on_phase is not None:
         on_phase("load-validated")
@@ -555,7 +597,7 @@ def validate_native_records(
     records: tuple[NativeRecord, ...], destination: Path,
 ) -> NativeStats:
     """Compare source records with independently reloaded native TF features."""
-    stats, _ = _preflight(records)
+    stats, _, _ = _preflight(records)
     if not _exact_native_records(records, iter_native_records(destination)):
         raise NativeComposeError(
             f"generic composer conservation failure for {len(records)} source rows"
