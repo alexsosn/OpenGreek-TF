@@ -163,9 +163,9 @@ jobs:
           inventory = select_all_text_files(root)
           assert inventory.file_counts == (3909, 533, 5)
           assert len(inventory.files) == 4447
-          assert inventory.empty_files, "pinned original zero-row witnesses must be accounted"
-          assert all(name.startswith("data/corpus_secondary/")
-                     for name in inventory.empty_files)
+          assert inventory.empty_files == frozenset({
+              "data/corpus_secondary/democritus.fragmenta.jsonl"
+          }), "the exact pinned zero-record witness must be accounted"
           expected = {
               "primary": 1_970_947,
               "secondary": 307_085,
