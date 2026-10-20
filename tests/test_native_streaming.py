@@ -8,6 +8,7 @@ import pytest
 from tf.fabric import Fabric  # type: ignore[import-untyped]
 
 import opengreek_tf.native_composer as composer
+from opengreek_tf.fact_graph import restore_fact_fields
 from opengreek_tf.native_composer import (
     NativeComposeError,
     NativeRecord,
@@ -16,7 +17,6 @@ from opengreek_tf.native_composer import (
     validate_native_records,
     write_native_records,
 )
-from opengreek_tf.fact_graph import restore_fact_fields
 from opengreek_tf.record_stream import FieldArray, FieldObject
 
 
