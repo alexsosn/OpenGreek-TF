@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .native_composer import NativeComposeError, iter_native_records
+from .native_composer import NativeComposeError, NativeRecord, iter_native_records
 from .record_stream import FieldArray, FieldObject, FieldValue
 
 _KINDS = {
@@ -138,7 +139,7 @@ def validate_native_jsonl_sources(
     # checks, including final orphan/fabricated feature checks. Streaming its
     # records avoids retaining a second all-source tuple while stock original
     # JSONL is read one physical row at a time. Always exhaust the iterator.
-    def checked_loaded():
+    def checked_loaded() -> Iterator[NativeRecord]:
         try:
             yield from iter_native_records(destination)
         except (NativeComposeError, OSError) as exc:
