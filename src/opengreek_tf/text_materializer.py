@@ -186,9 +186,10 @@ def select_whole_primary_rung(
     for original in sorted(source.glob("*.jsonl")):
         relative = original.relative_to(root).as_posix()
         files.append(relative)
-        # A selected file cannot be partially sampled. Validate all selected
-        # paths and physical identities before reading and counting its rows.
-        _validate_files(root, tuple(files))
+        # Do not dereference symlinks even temporarily while counting.
+        # Check physical duplicate aliases together when the rung is selected.
+        if original.is_symlink() or not original.is_file():
+            raise ValueError(f"symlink or missing original source file: {relative}")
         with original.open("rb") as handle:
             count = sum(1 for _ in handle)
         if count == 0:
@@ -200,6 +201,7 @@ def select_whole_primary_rung(
                 f"{maximum_rows} at {relative} ({rows} records)"
             )
         if rows >= minimum_rows:
+            _validate_files(root, tuple(files))
             return PrimaryRung(tuple(files), rows)
     raise ValueError(
         f"insufficient original primary source rows: {rows} < {minimum_rows}"
