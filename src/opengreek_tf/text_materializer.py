@@ -17,6 +17,7 @@ from .unaligned_materializer import iter_native_unaligned
 
 _FAMILY_DIRECTORIES = ("corpus", "corpus_secondary", "paratext")
 _EXPECTED_FILES = (3909, 533, 5)
+_PINNED_EMPTY_FILES = frozenset({"data/corpus_secondary/democritus.fragmenta.jsonl"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +109,14 @@ def select_all_text_files(
             f"incomplete pinned textual source inventory: "
             f"expected {expected_file_counts}, got {tuple(sizes)}"
         )
-    return TextInventory(selected, frozenset(empty), tuple(sizes))  # type: ignore[arg-type]
+    if frozenset(empty) != _PINNED_EMPTY_FILES:
+        raise ValueError(
+            "pinned original empty textual source inventory mismatch: "
+            f"expected {sorted(_PINNED_EMPTY_FILES)}, got {sorted(empty)}"
+        )
+    return TextInventory(
+        selected, frozenset(empty), (sizes[0], sizes[1], sizes[2]),
+    )
 
 
 def iter_native_texts(
