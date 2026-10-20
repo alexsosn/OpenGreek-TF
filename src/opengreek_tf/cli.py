@@ -243,7 +243,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if final.revision != snapshot.revision or final.path.resolve() != snapshot.path.resolve():
             raise ValueError("original source changed during full-text conversion")
         manifest = native_tf_manifest(destination)
-        output: dict[str, object] = {
+        summary: dict[str, object] = {
             "status": "validated-all-texts" if args.all else "validated-selected-texts",
             "revision": snapshot.revision,
             "destination": str(destination),
@@ -261,8 +261,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "canonical_sha256": manifest.canonical_sha256,
         }
         if not args.all:
-            output["source_files"] = list(selected)
-        print(json.dumps(output, sort_keys=True))
+            summary["source_files"] = list(selected)
+        print(json.dumps(summary, sort_keys=True))
         return 0
 
     if args.command == "search-native":
