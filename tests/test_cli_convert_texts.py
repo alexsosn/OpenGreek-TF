@@ -22,7 +22,7 @@ FILES = (
     "data/corpus_secondary/s.jsonl",
     "data/paratext/a.jsonl",
 )
-EMPTY = "data/corpus_secondary/empty.jsonl"
+EMPTY = "data/corpus_secondary/democritus.fragmenta.jsonl"
 
 
 @pytest.fixture
