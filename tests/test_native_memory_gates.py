@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import weakref
+from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -146,7 +147,7 @@ def test_postwrite_conservation_rejects_bool_int_equal_values(
     records: tuple[NativeRecord, ...],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original_reader = composer.read_native_records
+    original_iterator = composer.iter_native_records
     original_fields = records[0].fields
     forged_fields = FieldObject(tuple(
         (key, 0 if key == "available" else value)
@@ -157,11 +158,13 @@ def test_postwrite_conservation_rejects_bool_int_equal_values(
     assert type(forged_fields.require("available")) is int
     assert type(original_fields.require("available")) is bool
 
-    def forged_loader(path: Path) -> tuple[NativeRecord, ...]:
-        loaded = original_reader(path)
-        return (replace(loaded[0], fields=forged_fields), *loaded[1:])
+    def forged_loader(path: Path) -> Iterator[NativeRecord]:
+        for index, record in enumerate(original_iterator(path)):
+            yield replace(record, fields=forged_fields) if index == 0 else record
 
-    monkeypatch.setattr(composer, "read_native_records", forged_loader)
+    # The writer must detect a forged type even when source records are
+    # independently yielded one at a time rather than materialized in a tuple.
+    monkeypatch.setattr(composer, "iter_native_records", forged_loader)
     out = tmp_path / "forged"
     with pytest.raises(NativeComposeError, match="conservation"):
         write_native_records(records, out)
