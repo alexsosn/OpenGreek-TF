@@ -28,7 +28,7 @@ EMPTY = "data/corpus_secondary/empty.jsonl"
 @pytest.fixture
 def source(tmp_path: Path) -> Path:
     root = tmp_path / "verified"
-    data = (
+    data: tuple[list[dict[str, object]], ...] = (
         [
             {"urn": "p", "locus": "1", "edition": "e", "source": "tei",
              "license": "CC0", "text": "λόγος  ἀνήρ\n", "page": 0, "dfhg_flag": False},
