@@ -94,6 +94,34 @@ and the final work/author/section ontology remains open. A failed run emits no
 success record; inspect/delete a newly created incomplete output directory
 before retrying. Full-corpus and Agora release gates remain under #6/#13/#14.
 
+## Unified primary + witness + paratext original-text conversion
+
+The public `convert-texts` command now selects original files from all three
+audited textual source families, emitting **one** native TF graph with the
+existing typed-fact writer. Secondary witnesses and editorial paratext retain
+their original text as unaligned native source facts; no lexical alignment is
+inferred.
+
+```bash
+opengreek-tf convert-texts upstream/open-greek-corpus \
+  --file data/corpus/abydenus.fragmenta.jsonl \
+  --file data/corpus_secondary/abydenus.fragmenta.jsonl \
+  --file data/paratext/edition_apparatus.jsonl \
+  --output generated/mixed-texts
+```
+
+Use `--all` instead of `--file` to require the **complete pinned original
+text inventory** (3,909 primary, 533 secondary, 5 paratext files; 2,293,990
+source records, including physically empty files accounted in the source digest).
+That full conversion is **experimental and extremely memory intensive**; the
+2.29-million-record single-graph build has **not** yet been completed and
+independently validated, so this is not an assertion of release readiness.
+Selected genuine pinned three-family files are covered by installed CLI +
+loaded-Fabric independent source-conservation CI.
+
+See [complete text-family scope and remaining release gates](docs/research/all-text-family-conversion.md).
+The author/work registry, crosswalks, and final section ontology remain separate.
+
 ## Text-Fabric app / web browser
 
 A standard Text-Fabric advanced app under `app/` is part of the release.
