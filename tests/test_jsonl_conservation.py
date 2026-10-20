@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import pytest
+from tf.fabric import Fabric  # type: ignore[import-untyped]
 
 from opengreek_tf.jsonl_conservation import JsonlConservationError, validate_native_jsonl_sources
 from opengreek_tf.native_composer import write_native_records
@@ -198,3 +199,27 @@ def test_rejects_selected_empty_jsonl_file_even_when_other_rows_exist(
     (root / file).write_bytes(b"")
     with pytest.raises(JsonlConservationError, match="empty"):
         validate_native_jsonl_sources(root, (*FILES, file), out)
+
+
+def test_original_source_validator_exhausts_native_global_integrity(
+    corpus: tuple[Path, Path],
+) -> None:
+    """Even a forged known feature on an otherwise unused fact is rejected.
+
+    The independent stock JSONL reader must consume the *final* native
+    generator checks, not stop after its last valid physical source row.
+    """
+    root, out = corpus
+    fabric = Fabric(locations=str(out), silent="deep")
+    api = fabric.load("source_file", silent="deep")
+    assert api
+    misplaced_fact = api.F.otype.s("sourceFact")[0]
+    current = dict(api.F.source_file.items())
+    current[misplaced_fact] = "forged/unaccounted-source.jsonl"
+    assert fabric.save(
+        nodeFeatures={"source_file": current},
+        metaData={"source_file": {"valueType": "str"}},
+        silent="deep",
+    )
+    with pytest.raises(JsonlConservationError, match="native TF"):
+        validate_native_jsonl_sources(root, FILES, out)
