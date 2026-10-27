@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from scripts.scan_fire_tongues import fold, matches, nearest_distant, scan
+from opengreek_tf.fire_tongues_scan import fold, matches, nearest_distant, scan
 
 
 def test_greek_normalization_and_core_collocations() -> None:
