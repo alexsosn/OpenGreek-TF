@@ -40,7 +40,7 @@ python -m pip install -e '.[dev]'
 python -m pytest -q tests/test_fire_tongues_scan.py
 python -m opengreek_tf.ci_source_cache prepare upstream
 python -m opengreek_tf.ci_source_cache checkout upstream
-python scripts/scan_fire_tongues.py upstream --output fire-tongues-results
+python -m opengreek_tf.fire_tongues_scan upstream --output fire-tongues-results
 ```
 
 The pinned GitHub Actions workflow performs this using a verified checkout and publishes `candidates.jsonl` and `summary.json` as an auditable artifact.
