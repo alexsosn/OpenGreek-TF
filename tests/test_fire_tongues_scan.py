@@ -2,10 +2,10 @@
 import json
 from pathlib import Path
 
-from scripts.scan_fire_tongues import fold, matches, scan
+from scripts.scan_fire_tongues import fold, matches, nearest_distant, scan
 
 
-def test_greek_normalization_and_core_collocations():
+def test_greek_normalization_and_core_collocations() -> None:
     assert fold("ΓΛῶΣΣΑΙ ΠΥΡΌΣ") == "γλωσσαι πυροσ"
     assert any(x["tier"] == "core" for x in matches("καὶ γλῶσσαι πυρὸς"))
     assert any(x["tier"] == "core" for x in matches("ἐν γλώσσαις πυρὸς"))
@@ -13,19 +13,26 @@ def test_greek_normalization_and_core_collocations():
     assert matches("γλῶσσαι " + ("ἀ" * 200) + " πυρός") == []
 
 
-def test_expanded_fire_and_non_fire_words():
+def test_expanded_fire_and_non_fire_words() -> None:
     got = matches("γλῶσσα καιομένη")
     assert got and all(x["tier"] == "expanded" for x in got)
     assert matches("γλῶσσα καὶ ἐξ αὐτῆς λόγοι") == []
 
 
-def test_every_pair_not_just_nearest():
+def test_distant_same_passage_is_reportable() -> None:
+    text = "γλῶσσαι " + ("ἀ" * 240) + " πυρός"
+    assert matches(text) == []
+    distant = nearest_distant(fold(text))
+    assert distant is not None and distant["distance"] > 160
+
+
+def test_every_pair_not_just_nearest() -> None:
     pairs = matches("πῦρ γλῶσσα φλόξ")
     assert len(pairs) == 2
     assert {p["fire_root"] for p in pairs} == {"πυρ", "φλοξ"}
 
 
-def test_scans_each_family_and_detects_cross_record(tmp_path: Path):
+def test_scans_each_family_and_detects_cross_record(tmp_path: Path) -> None:
     root = tmp_path / "source"
     rows = {
         "corpus": [
