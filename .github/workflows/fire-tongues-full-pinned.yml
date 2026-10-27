@@ -3,7 +3,7 @@ name: Pinned full-corpus tongues of fire research scan
 on:
   pull_request:
     paths:
-      - "scripts/scan_fire_tongues.py"
+      - "src/opengreek_tf/fire_tongues_scan.py"
       - "tests/test_fire_tongues_scan.py"
       - ".github/workflows/fire-tongues-full-pinned.yml"
   workflow_dispatch:
@@ -41,7 +41,7 @@ jobs:
           set -euo pipefail
           python -m opengreek_tf.ci_source_cache checkout upstream --cache-hit "$SOURCE_CACHE_HIT"
       - name: Scan EVERY primary, secondary, and paratext row
-        run: python scripts/scan_fire_tongues.py upstream --output fire-tongues-results
+        run: python -m opengreek_tf.fire_tongues_scan upstream --output fire-tongues-results
       - name: Display corpus-wide census and exact hits from 1 Enoch
         shell: python
         run: |
