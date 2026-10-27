@@ -12,6 +12,7 @@ import re
 import unicodedata
 from collections import Counter
 from pathlib import Path
+from typing import Any, TypedDict
 
 FAMILIES = {
     "primary": ("corpus", 3909, 1_970_947),
@@ -25,6 +26,15 @@ FIRE = re.compile(r"πυρ|φλογ|φλεγ|φλεξ|φλοξ|καιο|καιε
 CORE = ("πυρ", "φλογ", "φλεγ", "φλεξ", "φλοξ")
 
 
+class Pair(TypedDict):
+    tongue_offset: int
+    fire_offset: int
+    distance: int
+    fire_root: str
+    tier: str
+
+
+
 def fold(text: str) -> str:
     """Case- and accent-insensitive Greek, preserving original source text elsewhere."""
     return "".join(
@@ -33,13 +43,12 @@ def fold(text: str) -> str:
     )
 
 
-def matches(text: str, window: int = WINDOW) -> list[dict]:
+def matches_normalized(normalized: str, window: int = WINDOW) -> list[Pair]:
     """Every tongue/fire pair within the given normalized-character distance."""
-    normalized = fold(text)
     tongues = list(TONGUE.finditer(normalized))
     fires = list(FIRE.finditer(normalized))
     fire_positions = [f.start() for f in fires]
-    found = []
+    found: list[Pair] = []
     for t in tongues:
         left = bisect.bisect_left(fire_positions, t.start() - window)
         right = bisect.bisect_right(fire_positions, t.start() + window)
@@ -54,15 +63,45 @@ def matches(text: str, window: int = WINDOW) -> list[dict]:
     return found
 
 
+def matches(text: str, window: int = WINDOW) -> list[Pair]:
+    """Public helper for unnormalized Greek source text."""
+    return matches_normalized(fold(text), window)
+
+
+def nearest_distant(normalized: str) -> Pair | None:
+    """Keep a work in the inventory even if its terms are >WINDOW apart."""
+    tongues = list(TONGUE.finditer(normalized))
+    fires = list(FIRE.finditer(normalized))
+    if not tongues or not fires:
+        return None
+    positions = [f.start() for f in fires]
+    closest: Pair | None = None
+    for tongue in tongues:
+        index = bisect.bisect_left(positions, tongue.start())
+        for neighbor in (index - 1, index):
+            if 0 <= neighbor < len(fires):
+                fire = fires[neighbor]
+                distance = abs(tongue.start() - fire.start())
+                if closest is None or distance < closest["distance"]:
+                    closest = {
+                        "tongue_offset": tongue.start(),
+                        "fire_offset": fire.start(),
+                        "distance": distance,
+                        "fire_root": fire.group(),
+                        "tier": "core" if fire.group().startswith(CORE) else "expanded",
+                    }
+    return closest
+
+
 def raw_context(text: str, offset: int, length: int = 420) -> str:
     """Extract exact original source characters; offset is approximate for decomposed text."""
     start = max(0, offset - 140)
     return text[start:start + length]
 
 
-def scan(root: Path, output: Path, *, expected: bool = True) -> dict:
+def scan(root: Path, output: Path, *, expected: bool = True) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
-    statistics: dict[str, dict] = {}
+    statistics: dict[str, dict[str, int]] = {}
     tally: Counter[str] = Counter()
     out_path = output / "candidates.jsonl"
     with out_path.open("w", encoding="utf-8") as out:
@@ -85,7 +124,7 @@ def scan(root: Path, output: Path, *, expected: bool = True) -> dict:
                             raise ValueError(f"{relative}:{ordinal}: non-string text")
                         normalized = fold(original)
                         tally[f"{family}.tongue_occurrences"] += len(TONGUE.findall(normalized))
-                        pairs = matches(original)
+                        pairs = matches_normalized(normalized)
                         for pair in pairs:
                             item = {
                                 "family": family, "scope": "intra-passage",
@@ -99,6 +138,20 @@ def scan(root: Path, output: Path, *, expected: bool = True) -> dict:
                             out.write(json.dumps(item, ensure_ascii=False) + "\n")
                             close += 1
                             tally[f"{family}.{pair['tier']}.pairs"] += 1
+                        if not pairs:
+                            distant = nearest_distant(normalized)
+                            if distant is not None:
+                                item = {
+                                    "family": family, "scope": "intra-passage-distant",
+                                    "path": relative, "ordinal": ordinal,
+                                    "locus": source.get("locus"), "urn": source.get("urn"),
+                                    **distant,
+                                    "context": raw_context(original, min(
+                                        distant["tongue_offset"], distant["fire_offset"]
+                                    )),
+                                }
+                                out.write(json.dumps(item, ensure_ascii=False) + "\\n")
+                                tally[f"{family}.distant.passages"] += 1
                         # Include two adjacent records from ONE file: phrase may cross
                         # the upstream locus boundary. Never bridge separate files.
                         if previous is not None:
