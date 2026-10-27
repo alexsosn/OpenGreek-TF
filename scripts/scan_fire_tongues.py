@@ -21,8 +21,8 @@ FAMILIES = {
 WINDOW = 160
 TONGUE = re.compile(r"γλωσσ|γλωττ")
 # Core fire lexemes; expanded stems intentionally over-retrieve.
-FIRE = re.compile(r"πυρ|φλογ|φλεγ|φλεξ|καιο|καιε|καιει|καυ|αιθ|εμπρησ")
-CORE = ("πυρ", "φλογ", "φλεγ", "φλεξ")
+FIRE = re.compile(r"πυρ|φλογ|φλεγ|φλεξ|φλοξ|καιο|καιε|καιει|καυ|αιθ|εμπρησ")
+CORE = ("πυρ", "φλογ", "φλεγ", "φλεξ", "φλοξ")
 
 
 def fold(text: str) -> str:
