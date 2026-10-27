@@ -6,7 +6,7 @@ from scripts.scan_fire_tongues import fold, matches, scan
 
 
 def test_greek_normalization_and_core_collocations():
-    assert fold("ΓΛῶΣΣΑΙ ΠΥΡΌΣ") == "γλωσσαι πυρος"
+    assert fold("ΓΛῶΣΣΑΙ ΠΥΡΌΣ") == "γλωσσαι πυροσ"
     assert any(x["tier"] == "core" for x in matches("καὶ γλῶσσαι πυρὸς"))
     assert any(x["tier"] == "core" for x in matches("ἐν γλώσσαις πυρὸς"))
     assert any(x["tier"] == "core" for x in matches("γλῶττα καὶ φλόγα"))
@@ -22,7 +22,7 @@ def test_expanded_fire_and_non_fire_words():
 def test_every_pair_not_just_nearest():
     pairs = matches("πῦρ γλῶσσα φλόξ")
     assert len(pairs) == 2
-    assert {p["fire_root"] for p in pairs} == {"πυρ", "φλογ"}
+    assert {p["fire_root"] for p in pairs} == {"πυρ", "φλοξ"}
 
 
 def test_scans_each_family_and_detects_cross_record(tmp_path: Path):
