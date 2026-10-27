@@ -150,7 +150,7 @@ def scan(root: Path, output: Path, *, expected: bool = True) -> dict[str, Any]:
                                         distant["tongue_offset"], distant["fire_offset"]
                                     )),
                                 }
-                                out.write(json.dumps(item, ensure_ascii=False) + "\\n")
+                                out.write(json.dumps(item, ensure_ascii=False) + "\n")
                                 tally[f"{family}.distant.passages"] += 1
                         # Include two adjacent records from ONE file: phrase may cross
                         # the upstream locus boundary. Never bridge separate files.
