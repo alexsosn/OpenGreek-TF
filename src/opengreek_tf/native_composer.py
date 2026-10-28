@@ -213,10 +213,12 @@ def write_native_records(
     destination: Path,
     *,
     on_phase: Callable[[str], None] | None = None,
+    slot_layout: str = "runs",
 ) -> NativeStats:
-    """Preserve the public complete-record writer and its exact native F/E."""
+    """Keep the legacy run-level default; opt-in to passage-carriage slots."""
     return write_native_record_factory(
         lambda: iter(records), destination, on_phase=on_phase,
+        slot_layout=slot_layout,
     )
 
 
@@ -225,6 +227,7 @@ def write_native_record_factory(
     destination: Path,
     *,
     on_phase: Callable[[str], None] | None = None,
+    slot_layout: str = "runs",
 ) -> NativeStats:
     """Build native TF from reproducibly replayable strictly typed source rows.
 
@@ -232,6 +235,8 @@ def write_native_record_factory(
     CV walks a second pass, and a third compares to the independently loaded
     native F/E. Does not stream Text-Fabric's own feature and edge maps.
     """
+    if slot_layout not in {"runs", "passage"} or type(slot_layout) is not str:
+        raise NativeComposeError(f"unsupported native TF slot layout: {slot_layout!r}")
     if destination.exists() or destination.is_symlink():
         raise NativeComposeError("native TF destination already exists")
     stats, available, preflight_signature = _preflight(source_rows())
@@ -270,9 +275,16 @@ def write_native_record_factory(
             )
             if textual:
                 assert record.text is not None
-                for run in segment_runs(record.text):
+                # This changes slot/query granularity ONLY in the explicitly
+                # declared passage-carriage mode. No lexical word nodes exist.
+                text_values = (
+                    (record.text,) if record.text else ()
+                ) if slot_layout == "passage" else (
+                    run.value for run in segment_runs(record.text)
+                )
+                for value in text_values:
                     text_atom = cv.slot()
-                    cv.feature(text_atom, atom_kind="text", form=run.value)
+                    cv.feature(text_atom, atom_kind="text", form=value)
             source_atom = cv.slot()
             cv.feature(
                 source_atom,
@@ -319,6 +331,9 @@ def write_native_record_factory(
         "sectionFeatures": "source_record_id" if has_text else "",
         "fmt:text-orig-full": "{form}" if has_text else "{source_record_id}",
     }
+    if slot_layout == "passage":
+        # Legacy datasets omit this key, preserving their exact hashes.
+        otext["slotLayout"] = "passage"
     if not CV(output, silent="deep").walk(
         director, slotType="atom",
         generic={"source": "Open Greek pinned mixed typed source records"},
@@ -403,6 +418,11 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
     has_passages = bool(api.F.otype.s("passage"))
     otext = fabric.features["otext"].metaData
     expected_format = "{form}" if has_passages else "{source_record_id}"
+    native_slot_layout = otext.get("slotLayout")
+    # Missing layout means the exact historical run-level slot contract.
+    # No forged 'runs' tag or unfamiliar mode is silently accepted.
+    if native_slot_layout not in (None, "passage"):
+        raise NativeComposeError("unknown or forged native slot layout")
     expected_sections = "passage" if has_passages else ""
     expected_section_features = "source_record_id" if has_passages else ""
     if (
@@ -544,6 +564,13 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
                 runs.append(run)
             if "".join(runs) != source_text:
                 raise NativeComposeError("native text slots differ from source facts")
+            expected_runs = (
+                [source_text] if source_text else []
+            ) if native_slot_layout == "passage" else [
+                original.value for original in segment_runs(source_text)
+            ]
+            if runs != expected_runs:
+                raise NativeComposeError("native text slot layout differs from declared mode")
             anchor_form = api.F.form.v(anchor) if "form" in declared else None
             if anchor_form not in (None, "") or (source_text and anchor_form is not None):
                 raise NativeComposeError("source anchor contains fabricated text")
