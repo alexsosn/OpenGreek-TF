@@ -119,6 +119,16 @@ independently validated, so this is not an assertion of release readiness.
 Selected genuine pinned three-family files are covered by installed CLI +
 loaded-Fabric independent source-conservation CI.
 
+Experimental `--slot-layout passage` (with `convert-texts` only) stores each
+nonempty primary passage in one native text slot rather than one slot per
+whitespace/nonwhitespace run. It still preserves all original Unicode and
+native typed source facts, and must pass independent original-JSONL/native-Fabric
+validation. **This changes TF slot/query granularity:** it is useful for
+source carriage and passage browsing, *not* a drop-in replacement for
+run-level queries or scholarly word tokens. The default `runs` layout and
+existing native TF hashes remain unchanged. See the
+[compact passage-slot experiment](docs/research/compact-passage-slots.md).
+
 See [complete text-family scope and remaining release gates](docs/research/all-text-family-conversion.md).
 The author/work registry, crosswalks, and final section ontology remain separate.
 
