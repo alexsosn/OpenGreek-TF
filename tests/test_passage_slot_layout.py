@@ -179,7 +179,8 @@ def test_compact_mixed_original_jsonl_independent_native_conservation(
         {"urn": "a", "locus": "1", "edition": "edition", "source": "tei",
          "license": "CC0", "text": GREEK, "page": 0, "dfhg_flag": False},
         {"urn": "a", "locus": "1", "edition": "ocr", "source": "ocr",
-         "license": "CC0", "text": "λέξις", "rank": "secondary"},
+         "license": "CC0", "text": "λέξις", "rank": "secondary",
+         "secondary_reason": "replaced"},
         {"slug": "a", "page": "1", "lang": "grc", "source": "tei",
          "license": "CC0", "text": "σημείωμα"},
     )
