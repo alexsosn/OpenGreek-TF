@@ -118,6 +118,7 @@ def test_loaded_compact_layout_rejects_forged_config(
     out = tmp_path / "compact"
     write_native_records(records, out, slot_layout="passage")
     fabric = Fabric(locations=str(out), silent="deep")
+    assert fabric.explore(silent="deep")
     meta = dict(fabric.features["otext"].metaData)
     meta["slotLayout"] = forged
     assert fabric.save(metaData={"otext": meta}, silent="deep")
@@ -131,6 +132,7 @@ def test_compact_mode_cannot_be_downgraded_to_legacy_runs(
     out = tmp_path / "compact"
     write_native_records(records, out, slot_layout="passage")
     fabric = Fabric(locations=str(out), silent="deep")
+    assert fabric.explore(silent="deep")
     meta = dict(fabric.features["otext"].metaData)
     meta.pop("slotLayout")
     assert fabric.save(metaData={"otext": meta}, silent="deep")
@@ -144,6 +146,7 @@ def test_old_run_layout_cannot_forge_compact_passage_claim(
     out = tmp_path / "legacy"
     write_native_records(records, out)
     fabric = Fabric(locations=str(out), silent="deep")
+    assert fabric.explore(silent="deep")
     meta = dict(fabric.features["otext"].metaData)
     meta["slotLayout"] = "passage"
     assert fabric.save(metaData={"otext": meta}, silent="deep")
