@@ -84,6 +84,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="All 4,447 original textual files (memory-intensive, unreleased scale)",
     )
     convert_texts.add_argument(
+        "--slot-layout", choices=("runs", "passage"), default="runs",
+        help=(
+            "Experimental text-slot carriage: default runs preserve run-level "
+            "slots; passage uses one text slot per nonempty passage (no run search)"
+        ),
+    )
+    convert_texts.add_argument(
         "--output", type=Path, required=True,
         help="New single native TF graph directory outside the source checkout",
     )
@@ -219,6 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         stats = materialize_texts(
             snapshot.path, selected, destination, allow_empty_files=empty_files,
+            slot_layout=args.slot_layout,
         )
         validation = validate_native_jsonl_sources(
             snapshot.path, selected, destination, allow_empty_files=empty_files,
@@ -267,6 +275,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
         if not args.all:
             summary["source_files"] = list(selected)
+        if args.slot_layout != "runs":
+            # Preserve default CLI report shape and native TF hashes.
+            summary["slot_layout"] = args.slot_layout
         print(json.dumps(summary, sort_keys=True))
         return 0
 
