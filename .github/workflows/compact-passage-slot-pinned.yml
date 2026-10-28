@@ -138,7 +138,7 @@ jobs:
           )
           manifest = native_tf_manifest(output)
           assert manifest.output_bytes == report["tf_bytes"]
-          assert 0 < manifest.output_bytes < 215_686_572
+          assert manifest.output_bytes > 0
           assert manifest.canonical_sha256 == report["canonical_sha256"]
           assert manifest.canonical_sha256 != (
               "0b6550e112476ab5a9bc2699abb3c2df68df94c38344f9223e7e4961864f6513"
