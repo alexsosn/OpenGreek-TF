@@ -224,3 +224,20 @@ def test_user_cli_rejects_fake_layout_without_output(tmp_path: Path) -> None:
         main(["convert-texts", str(tmp_path), "--all", "--slot-layout", "word",
               "--output", str(tmp_path / "generated")])
     assert not (tmp_path / "generated").exists()
+
+
+def test_bare_compact_layout_declaration_is_not_silent_legacy_fallback(
+    tmp_path: Path, records: tuple[NativeRecord, ...],
+) -> None:
+    """A present-but-empty otext declaration must not mean legacy runs."""
+    out = tmp_path / "compact"
+    write_native_records(records, out, slot_layout="passage")
+    config = out / "otext.tf"
+    original = config.read_text(encoding="utf-8")
+    assert "@slotLayout=passage\n" in original
+    config.write_text(
+        original.replace("@slotLayout=passage\n", "@slotLayout\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(NativeComposeError, match="slot|layout"):
+        read_native_records(out)
