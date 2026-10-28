@@ -22,8 +22,8 @@ from opengreek_tf.record_stream import FieldArray, FieldObject
 from opengreek_tf.release import SUPPORTED_RELEASE
 from opengreek_tf.source import SourceSnapshot
 from opengreek_tf.text_materializer import materialize_texts
-from opengreek_tf.tf_integrity import native_tf_manifest
 from opengreek_tf.text_runs import segment_runs
+from opengreek_tf.tf_integrity import native_tf_manifest
 
 GREEK = "λόγος  ἀνήρ\t\nφιλοσοφία\\ καί;  ἄνθρωπος\n"
 
