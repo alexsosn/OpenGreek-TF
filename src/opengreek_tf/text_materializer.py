@@ -136,6 +136,7 @@ def iter_native_texts(
 def materialize_texts(
     root: Path, relative_files: tuple[str, ...], destination: Path, *,
     allow_empty_files: frozenset[str] = frozenset(),
+    slot_layout: str = "runs",
 ) -> NativeStats:
     """Write selected original text families into ONE genuine native TF graph.
 
@@ -151,7 +152,7 @@ def materialize_texts(
         lambda: iter_native_texts(
             root, relative_files, allow_empty_files=allow_empty_files,
         ),
-        destination,
+        destination, slot_layout=slot_layout,
     )
 
 
