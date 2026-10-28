@@ -418,11 +418,14 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
     has_passages = bool(api.F.otype.s("passage"))
     otext = fabric.features["otext"].metaData
     expected_format = "{form}" if has_passages else "{source_record_id}"
-    native_slot_layout = otext.get("slotLayout")
-    # Missing layout means the exact historical run-level slot contract.
-    # No forged 'runs' tag or unfamiliar mode is silently accepted.
-    if native_slot_layout not in (None, "passage"):
-        raise NativeComposeError("unknown or forged native slot layout")
+    # Only ABSENCE of the declaration means historical run-level slots.
+    # A malformed present-but-empty @slotLayout is NOT the legacy default.
+    if "slotLayout" in otext:
+        if otext["slotLayout"] != "passage":
+            raise NativeComposeError("unknown or forged native slot layout")
+        native_slot_layout = "passage"
+    else:
+        native_slot_layout = "runs"
     expected_sections = "passage" if has_passages else ""
     expected_section_features = "source_record_id" if has_passages else ""
     if (
