@@ -16,7 +16,10 @@ from tf.fabric import Fabric  # type: ignore[import-untyped]
 from opengreek_tf.cli import main
 from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
 from opengreek_tf.native_composer import (
-    NativeComposeError, NativeRecord, read_native_records, write_native_records,
+    NativeComposeError,
+    NativeRecord,
+    read_native_records,
+    write_native_records,
 )
 from opengreek_tf.record_stream import FieldArray, FieldObject
 from opengreek_tf.release import SUPPORTED_RELEASE
