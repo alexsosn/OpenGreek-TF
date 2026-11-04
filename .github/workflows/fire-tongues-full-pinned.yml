@@ -1,0 +1,72 @@
+name: Pinned full-corpus tongues of fire research scan
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/fire_tongues_scan.py"
+      - "tests/test_fire_tongues_scan.py"
+      - ".github/workflows/fire-tongues-full-pinned.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run Greek normalization and boundary tests
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pytest -q tests/test_fire_tongues_scan.py
+      - name: Prepare exact full text-family sparse checkout
+        id: scope
+        run: python -m opengreek_tf.ci_source_cache prepare upstream
+      - name: Restore verified reusable Git objects
+        id: objects
+        uses: actions/cache/restore@v4
+        with:
+          path: upstream/.git/objects
+          key: ${{ steps.scope.outputs.key }}
+      - name: Checkout and verify pinned full Open Greek source
+        shell: bash
+        env:
+          SOURCE_CACHE_HIT: ${{ steps.objects.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          python -m opengreek_tf.ci_source_cache checkout upstream --cache-hit "$SOURCE_CACHE_HIT"
+      - name: Scan EVERY primary, secondary, and paratext row
+        run: python -m opengreek_tf.fire_tongues_scan upstream --output fire-tongues-results
+      - name: Display corpus-wide census and exact hits from 1 Enoch
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          result = Path("fire-tongues-results")
+          report = json.loads((result / "summary.json").read_text())
+          print("SCANNED:", json.dumps(report["families"], sort_keys=True))
+          for line in (result / "candidates.jsonl").open():
+              row = json.loads(line)
+              if row["path"].endswith("liber-enoch.apocalypsis-enochi.jsonl"):
+                  print("ENOCH:", json.dumps(row, ensure_ascii=False))
+          summary = Path.home() / "dummy"
+          import os
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as output:
+              output.write("## Exhaustive pinned fire/tongues candidate scan\n\n")
+              output.write("All text families from commit 338aa27310b3cfe2588a993b4d113b503597d70f.\n\n")
+              output.write("| Family | Files | Records | Within passage | Adjacent passages |\n|---|---:|---:|---:|---:|\n")
+              for family, stats in report["families"].items():
+                  output.write(f"| {family} | {stats['files']} | {stats['rows']} | {stats['intra_passage_pairs']} | {stats['adjacent_passage_pairs']} |\n")
+              output.write("\nCandidates require philological review; hit counts are NOT unique works.\n")
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fire-tongues-full-pinned-candidates
+          path: fire-tongues-results/
+          if-no-files-found: warn
+          retention-days: 30
