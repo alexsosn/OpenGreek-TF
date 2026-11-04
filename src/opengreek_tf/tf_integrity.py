@@ -43,13 +43,51 @@ def _canonical_payload(name: str, payload: bytes) -> bytes:
     return b"\n".join(field for field in fields if field is not stamped[0]) + delimiter + body
 
 
-def native_tf_manifest(destination: Path) -> NativeTfManifest:
-    """Compute raw and normalized digests of real serialized .tf feature files.
+# Buffer only feature headers; malformed oversized headers fail closed.
+_HEADER_READ_BYTES = 64 * 1024
+_MAX_HEADER_BYTES = 1024 * 1024
+_BODY_READ_BYTES = 1024 * 1024
 
-    TF writes a `.tf/` cache directory, which `glob("*.tf")` also matches.
-    Include only regular .tf feature files in their deterministic name order.
-    The canonical digest excludes precisely one verified dateWritten header per
-    feature, but hashes all remaining metadata, node/edge data and order.
+
+def _feature_hashes(path: Path) -> tuple[int, bytes, bytes]:
+    """Hash an actual TF feature in bounded memory, preserving both digests."""
+    raw = hashlib.sha256()
+    canonical = hashlib.sha256()
+    with path.open("rb") as source:
+        first = bytearray()
+        while True:
+            chunk = source.read(_HEADER_READ_BYTES)
+            if not chunk:
+                raise NativeTfIntegrityError(f"{path.name}: incomplete TF header")
+            first.extend(chunk)
+            delimiter_at = first.find(b"\n\n")
+            if delimiter_at >= 0:
+                if delimiter_at + 2 > _MAX_HEADER_BYTES:
+                    raise NativeTfIntegrityError(f"{path.name}: oversized TF header")
+                break
+            if len(first) >= _MAX_HEADER_BYTES:
+                raise NativeTfIntegrityError(f"{path.name}: oversized TF header")
+
+        first_bytes = bytes(first)
+        canonical_first = _canonical_payload(path.name, first_bytes)
+        raw.update(first_bytes)
+        canonical.update(canonical_first)
+        size = len(first_bytes)
+        del first, first_bytes, canonical_first
+
+        while chunk := source.read(_BODY_READ_BYTES):
+            raw.update(chunk)
+            canonical.update(chunk)
+            size += len(chunk)
+
+    return size, raw.digest(), canonical.digest()
+
+
+def native_tf_manifest(destination: Path) -> NativeTfManifest:
+    """Compute exact native TF digests by reading each feature once, in chunks.
+
+    Text-Fabric's cache directory is not a feature file. Canonical hashes
+    exclude only the validated volatile @dateWritten header, not source facts.
     """
     files = sorted(path for path in destination.glob("*.tf") if path.is_file())
     if not files:
@@ -58,14 +96,13 @@ def native_tf_manifest(destination: Path) -> NativeTfManifest:
     canonical_digest = hashlib.sha256()
     size = 0
     for path in files:
-        raw = path.read_bytes()
-        canonical = _canonical_payload(path.name, raw)
-        size += len(raw)
+        feature_bytes, raw_hash, canonical_hash = _feature_hashes(path)
+        size += feature_bytes
         prefix = path.name.encode("utf-8") + b"\0"
         raw_digest.update(prefix)
-        raw_digest.update(hashlib.sha256(raw).digest())
+        raw_digest.update(raw_hash)
         canonical_digest.update(prefix)
-        canonical_digest.update(hashlib.sha256(canonical).digest())
+        canonical_digest.update(canonical_hash)
     return NativeTfManifest(
         tf_file_count=len(files),
         output_bytes=size,
