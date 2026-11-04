@@ -95,12 +95,12 @@ def test_manifest_streams_feature_bytes_with_exact_historical_hashes(
     name = "form.tf"
     stamp = b"@dateWritten=2026-10-11T10:00:00Z\n"
     header = b"@node\n@writtenBy=Text-Fabric\n" + stamp + b"\n"
-    body = ("λόγος  ἀνήρ\\t\\n" * 500_000).encode("utf-8")
+    body = ("λόγος  ἀνήρ\t\n" * 500_000).encode("utf-8")
     raw = header + body
     (tmp_path / name).write_bytes(raw)
     # The expectation is computed independently, from the original byte
     # contract rather than from this module's header parser or streaming code.
-    prefix = name.encode("utf-8") + b"\\0"
+    prefix = name.encode("utf-8") + b"\0"
     raw_hash = hashlib.sha256(prefix + hashlib.sha256(raw).digest()).hexdigest()
     canon = raw.replace(stamp, b"", 1)
     canon_hash = hashlib.sha256(prefix + hashlib.sha256(canon).digest()).hexdigest()
@@ -133,10 +133,10 @@ def test_manifest_header_delimiter_across_stream_chunk_boundary(
     name = "large_header.tf"
     stamp = b"@dateWritten=2026-10-11T10:00:00Z\n"
     header = b"@node\n@description=" + b"x" * 65_500 + b"\n" + stamp + b"\n"
-    body = b"1\\talpha\\r\\nbeta\\n" + b"\\0" * 200_000
+    body = b"1\talpha\r\nbeta\n" + b"\0" * 200_000
     raw = header + body
     (tmp_path / name).write_bytes(raw)
-    prefix = name.encode() + b"\\0"
+    prefix = name.encode() + b"\0"
     expected_raw = hashlib.sha256(prefix + hashlib.sha256(raw).digest()).hexdigest()
     expected_canonical = hashlib.sha256(
         prefix + hashlib.sha256(raw.replace(stamp, b"", 1)).digest()
