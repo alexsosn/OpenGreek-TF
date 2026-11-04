@@ -132,7 +132,11 @@ def test_manifest_header_delimiter_across_stream_chunk_boundary(
 
     name = "large_header.tf"
     stamp = b"@dateWritten=2026-10-11T10:00:00Z\n"
-    header = b"@node\n@description=" + b"x" * 65_500 + b"\n" + stamp + b"\n"
+    prefix_header = b"@node\n@description="
+    before_delimiter = b"\n" + stamp[:-1]
+    padding = (64 * 1024 - 1) - len(prefix_header) - len(before_delimiter)
+    header = prefix_header + b"x" * padding + before_delimiter + b"\n\n"
+    assert header[64 * 1024 - 1 : 64 * 1024 + 1] == b"\n\n"
     body = b"1\talpha\r\nbeta\n" + b"\0" * 200_000
     raw = header + body
     (tmp_path / name).write_bytes(raw)
@@ -145,3 +149,12 @@ def test_manifest_header_delimiter_across_stream_chunk_boundary(
     assert result.raw_sha256 == expected_raw
     assert result.canonical_sha256 == expected_canonical
     assert result.output_bytes == len(raw)
+
+
+def test_manifest_rejects_oversized_unterminated_header(tmp_path: Path) -> None:
+    """Malformed headers cannot force unbounded buffering."""
+    (tmp_path / "form.tf").write_bytes(
+        b"@node\n@description=" + b"x" * (1024 * 1024 + 128)
+    )
+    with pytest.raises(NativeTfIntegrityError, match="oversized"):
+        native_tf_manifest(tmp_path)
