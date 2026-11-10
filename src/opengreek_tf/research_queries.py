@@ -88,6 +88,8 @@ def search_native(
     urn: str | None = None,
     edition: str | None = None,
     source: str | None = None,
+    source_file: str | None = None,
+    locus: str | None = None,
     max_results: int = 20,
 ) -> tuple[NativeResearchHit, ...]:
     """Search the verified native TF dataset without reading original JSONL.
@@ -102,7 +104,10 @@ def search_native(
         raise NativeResearchQueryError("invalid max_results")
     if type(contains) is not str:
         raise NativeResearchQueryError("contains must be a literal string")
-    for name, value in (("urn", urn), ("edition", edition), ("source", source)):
+    for name, value in (
+        ("urn", urn), ("edition", edition), ("source", source),
+        ("source_file", source_file), ("locus", locus),
+    ):
         if value is not None and type(value) is not str:
             raise NativeResearchQueryError(f"{name} must be a literal string")
 
@@ -149,6 +154,7 @@ def search_native(
             or (urn is not None and fields.get("urn") != urn)
             or (edition is not None and fields.get("edition") != edition)
             or (source is not None and fields.get("source") != source)
+            or (locus is not None and fields.get("locus") != locus)
         ):
             continue
         original_file = api.F.source_file.v(owner)
@@ -162,6 +168,8 @@ def search_native(
             or type(sequence) is not int or sequence < 1
         ):
             raise NativeResearchQueryError("invalid source occurrence provenance")
+        if source_file is not None and original_file != source_file:
+            continue
         output.append(NativeResearchHit(
             kind=kind,
             source_file=original_file, source_ordinal=original_ordinal,
@@ -188,6 +196,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--urn")
     parser.add_argument("--edition")
     parser.add_argument("--source")
+    parser.add_argument("--source-file", help="Exact original source_file provenance string")
+    parser.add_argument("--locus", help="Exact original source-authored locus string")
     parser.add_argument("--max-results", type=int, default=20)
     args = parser.parse_args(argv)
     for hit in search_native(
@@ -197,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         urn=args.urn,
         edition=args.edition,
         source=args.source,
+        source_file=args.source_file, locus=args.locus,
         max_results=args.max_results,
     ):
         print(json.dumps(asdict(hit), ensure_ascii=False, sort_keys=True))
