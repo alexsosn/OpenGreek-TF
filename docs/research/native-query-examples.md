@@ -27,9 +27,17 @@ opengreek-tf search-native ./generated/native \
 
 opengreek-tf search-native ./generated/native \
   --kind paratext-record --contains "ὑπόμνημα" --max-results 10
+
+# Exact physical source and original locus, as in pinned Abydenus
+opengreek-tf search-native ./generated/native \
+  --kind primary-passage \
+  --source-file data/corpus/abydenus.fragmenta.jsonl \
+  --locus "4.1" --contains "Χαλδαίων"
 ```
 
-The original \`python -m opengreek_tf.research_queries\` entrypoint remains available for existing scripts. Both commands delegate to the same native F/E search implementation.\n\nEach JSONL result includes literal reconstructed `text`, record `kind`,
+The original `python -m opengreek_tf.research_queries` entrypoint remains available for existing scripts. Both commands delegate to the same native F/E search implementation.
+
+Each JSONL result includes literal reconstructed `text`, record `kind`,
 `source_file`, 1-based `source_ordinal`, global `source_seq`,
 `source_record_id`, and available *source-authored string fields*: `urn`,
 `locus`, `edition`, `source`, `license`, `slug`, and string `page`.
@@ -55,6 +63,18 @@ hits = search_native(
 for hit in hits:
     print(hit.urn, hit.locus, hit.source_file, hit.source_ordinal, repr(hit.text))
 ```
+
+The `--source-file` flag matches the exact original TF owner provenance
+string, including its `data/corpus/`, `data/corpus_secondary/` or
+`data/paratext/` prefix. `--locus` matches an **original top-level string**
+source fact, not an inferred CTS/citation hierarchy. The pinned Abydenus
+primary JSONL contains distinct literal loci `4.1` and `4.5`; the source
+locus is not assumed to uniquely identify a record. Secondary witnesses may
+share a locus with primary passages, but remain separate and unaligned.
+Paratext has source page identifiers rather than loci; filtering it by a
+locus therefore yields no matches. The two filters combine with the
+existing exact text, urn, edition and source filters. Neither filter reduces
+Text-Fabric's whole-graph loading and global source-sequence ordering costs.
 
 The substring search is **literal, case/accent/Unicode-sensitive**, not
 tokenized, lemmatized, normalized or indexed. It loads native F/E and scans

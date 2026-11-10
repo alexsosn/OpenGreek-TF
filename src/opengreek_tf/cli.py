@@ -108,6 +108,8 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--urn", help="Original source row urn field (not inferred CTS)")
     search.add_argument("--edition", help="Original source row edition field")
     search.add_argument("--source", help="Original source row source field")
+    search.add_argument("--source-file", help="Exact original source_file provenance")
+    search.add_argument("--locus", help="Exact original source-authored locus string")
     search.add_argument("--max-results", type=int, default=20)
     return parser
 
@@ -285,6 +287,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for hit in search_native(
             args.tf_directory, kind=args.kind, contains=args.contains,
             urn=args.urn, edition=args.edition, source=args.source,
+            source_file=args.source_file, locus=args.locus,
             max_results=args.max_results,
         ):
             print(json.dumps(asdict(hit), ensure_ascii=False, sort_keys=True))
