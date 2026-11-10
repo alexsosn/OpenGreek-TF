@@ -183,34 +183,38 @@ def test_public_cli_search_native_preserves_greek_and_source_provenance(
     assert invalid.value.code == 2
 
 
+# RED-only dynamic API call lets pytest exercise the absent keywords before
+# implementation; replace with the typed entrypoint after observing RED.
+raw_search_native: Any = search_native
+
 def test_exact_source_file_and_source_locus_filters_on_loaded_native_facts(
     native: Path,
 ) -> None:
     """Locus is the exact source string, not an inferred CTS hierarchy."""
-    first = search_native(
+    first = raw_search_native(
         native, kind="primary-passage",
         source_file="data/corpus/p.jsonl", locus="1.1",
     )
     assert [(hit.source_seq, hit.locus, hit.text) for hit in first] == [
         (1, "1.1", "λόγος  ἀνήρ\n"),
     ]
-    second = search_native(
+    second = raw_search_native(
         native, kind="primary-passage",
         source_file="data/corpus/p.jsonl", locus="1.2",
         edition="revised", contains="ἄνθρωπος",
     )
     assert [(hit.source_seq, hit.locus) for hit in second] == [(2, "1.2")]
-    assert search_native(
+    assert raw_search_native(
         native, kind="primary-passage", source_file="data/corpus_secondary/p.jsonl",
     ) == ()
-    secondary = search_native(
+    secondary = raw_search_native(
         native, kind="secondary-witness",
         source_file="data/corpus_secondary/p.jsonl", locus="1.1",
     )
     assert len(secondary) == 1 and secondary[0].source_seq == 3
     # Editorial paratext has a page, not a fabricated source locus.
-    assert search_native(native, kind="paratext-record", locus="1.1") == ()
-    assert search_native(native, kind="primary-passage", locus="1") == ()
+    assert raw_search_native(native, kind="paratext-record", locus="1.1") == ()
+    assert raw_search_native(native, kind="primary-passage", locus="1") == ()
 
 
 def test_source_file_filter_does_not_conflate_different_primary_files(
@@ -239,14 +243,14 @@ def test_source_file_filter_does_not_conflate_different_primary_files(
     )
     destination = tmp_path / "native-multifile"
     write_native_records(rows, destination)
-    assert [hit.source_seq for hit in search_native(
+    assert [hit.source_seq for hit in raw_search_native(
         destination, kind="primary-passage", contains="λόγος", locus="4.1",
     )] == [1, 3]
-    assert [(hit.source_seq, hit.source_file) for hit in search_native(
+    assert [(hit.source_seq, hit.source_file) for hit in raw_search_native(
         destination, kind="primary-passage", contains="λόγος",
         source_file="data/corpus/abydenus.fragmenta.jsonl", locus="4.1",
     )] == [(1, "data/corpus/abydenus.fragmenta.jsonl")]
-    assert [hit.source_seq for hit in search_native(
+    assert [hit.source_seq for hit in raw_search_native(
         destination, kind="primary-passage",
         source_file="data/corpus/abydenus.fragmenta.jsonl",
     )] == [1, 2]
@@ -262,7 +266,7 @@ def test_research_query_new_filters_reject_non_strings_before_fabric_loading(
     tmp_path: Path, filter_key: str, invalid: object,
 ) -> None:
     with pytest.raises(NativeResearchQueryError, match=filter_key):
-        search_native(tmp_path / "not-a-fabric", kind="primary-passage",
+        raw_search_native(tmp_path / "not-a-fabric", kind="primary-passage",
                       **{filter_key: invalid})
 
 
