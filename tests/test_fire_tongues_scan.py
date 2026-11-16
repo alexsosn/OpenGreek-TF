@@ -2,6 +2,11 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from opengreek_tf import fire_tongues_scan as scanner
+from opengreek_tf.source import SourceAcquisitionError
+
 from opengreek_tf.fire_tongues_scan import fold, matches, nearest_distant, scan
 
 
@@ -66,3 +71,73 @@ def test_scans_each_family_and_detects_cross_record(tmp_path: Path) -> None:
                and e["locus"] == "15.2" for e in events)
     assert any(e["locus"] == "14.15" for e in events)
     assert any(e["family"] == "secondary" for e in events)
+
+
+def test_scanner_keeps_later_distant_tongue_after_early_close_pair(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "source"
+    path = root / "data" / "corpus" / "example.jsonl"
+    path.parent.mkdir(parents=True)
+    original = "γλῶσσα πυρός " + "α" * 300 + " γλῶσσα " + "β" * 240 + " πῦρ"
+    path.write_text(json.dumps({"text": original}, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+    scan(root, tmp_path / "results", expected=False)
+    entries = [
+        json.loads(line)
+        for line in (tmp_path / "results" / "candidates.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert any(row["scope"] == "intra-passage" for row in entries)
+    assert any(
+        row["scope"] == "intra-passage-distant"
+        and row["tongue_offset"] > 300
+        and row["distance"] > 160
+        for row in entries
+    )
+
+
+def test_source_context_is_positioned_with_decomposed_greek(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    path = root / "data" / "corpus" / "example.jsonl"
+    path.parent.mkdir(parents=True)
+    original = ("α\u0301" * 800) + " γλῶσσα πυρός"
+    path.write_text(json.dumps({"text": original}, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+    scan(root, tmp_path / "results", expected=False)
+    entries = [
+        json.loads(line)
+        for line in (tmp_path / "results" / "candidates.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert any(
+        row["scope"] == "intra-passage" and "γλῶσσα πυρός" in row["context"]
+        for row in entries
+    )
+
+
+def test_default_scanner_rejects_unverified_source_before_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "source"
+    target = tmp_path / "not-written"
+
+    def reject(_root: Path) -> None:
+        raise SourceAcquisitionError("tampered source checkout")
+
+    monkeypatch.setattr(scanner, "verify_source", reject, raising=False)
+    with pytest.raises(SourceAcquisitionError, match="tampered"):
+        scan(root, target)
+    assert not target.exists()
+
+
+def test_fixture_scan_does_not_claim_pinned_identity(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    path = root / "data" / "corpus" / "example.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"text":"γλῶσσα πυρός"}\n', encoding="utf-8")
+    report = scan(root, tmp_path / "results", expected=False)
+    assert report["pinned_commit"] is None
+    assert report["source_verified"] is False
