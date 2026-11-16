@@ -20,7 +20,7 @@ All scanning is of the original `text` value in each UTF-8 JSONL occurrence, nev
 
 ## Search
 
-The code case-folds and accent-strips the text for matching, not for quotation. It retrieves both `γλωσσ-` and Attic `γλωττ-` alongside `πυρ-`, `φλογ-`, `φλεγ-`, `φλεξ-`, `φλοξ-`, `καιο-`, `καιε-`, `καιει-`, `καυ-`, `αιθ-`, `ἐμπρησ-`, within **160 normalized characters**. Matches are classified as core fire vocabulary or deliberately over-inclusive extended fire vocabulary. The scanner finds *every* pair (not just the first hit in a file), reports source file, source occurrence ordinal, upstream locus, original Unicode context, and cross-row candidates where Greek source passage boundaries bisect a possible phrase.
+The code case-folds and accent-strips the text for matching, not for quotation. It retrieves both `γλωσσ-` and Attic `γλωττ-` alongside `πυρ-`, `φλογ-`, `φλεγ-`, `φλεξ-`, `φλοξ-`, `καιο-`, `καιε-`, `καιει-`, `καυ-`, `αιθ-`, `ἐμπρησ-`, within **160 normalized characters**. Matches are classified as core fire vocabulary or deliberately over-inclusive extended fire vocabulary. Within the 160-normalized-character window the scanner reports **every** matching tongue/fire pair. Outside this window it emits a nearest-fire lead for **each tongue occurrence not represented by a close pair**; it does not enumerate every long-range pair, and the lexical window still limits semantic recall. Every lead records source file, source occurrence ordinal, upstream locus, and original Unicode context. Cross-row candidate discovery uses folded-character rather than source-codepoint windows so decomposed Greek accents do not truncate the boundary search. Normalized offsets are mapped back to source-codepoint indices for excerpts.
 
 No presumption of word adjacency, Greek case, number, or word order. This still **cannot guarantee semantic exhaustiveness**: synonyms, indirect fire metaphors, stem omissions, long-distance constructions, and manuscripts absent from Open Greek remain possible. The result is a comprehensive *specified lexical scan*, not proof of non-attestation in all Greek literature.
 
@@ -32,6 +32,12 @@ No presumption of word adjacency, Greek case, number, or word order. This still 
 4. Treat 1 Enoch's composition date, Greek translation date, and manuscript attestation as separate questions.
 5. For claims about *before Acts*, use independent date estimates and include uncertain or pseudepigraphic attributions in an unresolved category, rather than silently excluding them.
 6. Compare omitted traditions such as papyri and texts outside this corpus; bibliographic corpus coverage is a separate limitation.
+
+## Source authenticity
+
+The normal CLI requires a clean local Git checkout of the exact supported upstream commit, matching origin URL and release manifest. Source verification runs before writing any output and again after the scan to detect working-tree changes. File/row counts remain an additional coverage check, not a substitute for source identity.
+
+`--no-expect-counts` is for non-pinned fixtures and exploratory inputs only. It sets `source_verified: false` and `pinned_commit: null` in the report even if the observed inventory resembles the release. Do not cite such results as a pinned corpus scan.
 
 ## Run
 
