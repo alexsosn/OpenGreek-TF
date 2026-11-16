@@ -168,3 +168,25 @@ def test_cross_record_match_survives_decomposed_unicode_window(
         and row["previous_locus"] == "1" and row["locus"] == "2"
         for row in entries
     )
+
+
+def test_each_term_has_its_own_source_faithful_context(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    path = root / "data" / "corpus" / "example.jsonl"
+    path.parent.mkdir(parents=True)
+    # The two terms are near in folded text but far in raw codepoint space.
+    original = "γλῶσσα " + ("α\u0301\u0300\u0314" * 140) + " πῦρ"
+    path.write_text(json.dumps({"text": original}, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+    scan(root, tmp_path / "results", expected=False)
+    entries = [
+        json.loads(line)
+        for line in (tmp_path / "results" / "candidates.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    pair = next(entry for entry in entries if entry["scope"] == "intra-passage")
+    assert "γλῶσσα" in pair["tongue_context"]
+    assert "πῦρ" in pair["fire_context"]
+    assert pair["tongue_context"] in original
+    assert pair["fire_context"] in original
