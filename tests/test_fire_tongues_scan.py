@@ -5,9 +5,8 @@ from pathlib import Path
 import pytest
 
 from opengreek_tf import fire_tongues_scan as scanner
-from opengreek_tf.source import SourceAcquisitionError
-
 from opengreek_tf.fire_tongues_scan import fold, matches, nearest_distant, scan
+from opengreek_tf.source import SourceAcquisitionError
 
 
 def test_greek_normalization_and_core_collocations() -> None:
@@ -141,3 +140,31 @@ def test_fixture_scan_does_not_claim_pinned_identity(tmp_path: Path) -> None:
     report = scan(root, tmp_path / "results", expected=False)
     assert report["pinned_commit"] is None
     assert report["source_verified"] is False
+
+
+def test_cross_record_match_survives_decomposed_unicode_window(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "source"
+    path = root / "data" / "corpus" / "example.jsonl"
+    path.parent.mkdir(parents=True)
+    records = [
+        {"text": "γλῶσσα " + ("α\u0301" * 130), "locus": "1"},
+        {"text": "πυρός", "locus": "2"},
+    ]
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in records),
+        encoding="utf-8",
+    )
+    scan(root, tmp_path / "results", expected=False)
+    entries = [
+        json.loads(line)
+        for line in (tmp_path / "results" / "candidates.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert any(
+        row["scope"] == "adjacent-passages"
+        and row["previous_locus"] == "1" and row["locus"] == "2"
+        for row in entries
+    )
