@@ -191,6 +191,12 @@ def scan(root: Path, output: Path, *, expected: bool = True) -> dict[str, Any]:
                                 "context": raw_context(original, min(
                                     pair["tongue_offset"], pair["fire_offset"]
                                 ), positions),
+                                "tongue_context": raw_context(
+                                    original, pair["tongue_offset"], positions
+                                ),
+                                "fire_context": raw_context(
+                                    original, pair["fire_offset"], positions
+                                ),
                             }
                             out.write(json.dumps(item, ensure_ascii=False) + "\n")
                             close += 1
@@ -204,6 +210,12 @@ def scan(root: Path, output: Path, *, expected: bool = True) -> dict[str, Any]:
                                 "context": raw_context(original, min(
                                     distant["tongue_offset"], distant["fire_offset"]
                                 ), positions),
+                                "tongue_context": raw_context(
+                                    original, distant["tongue_offset"], positions
+                                ),
+                                "fire_context": raw_context(
+                                    original, distant["fire_offset"], positions
+                                ),
                             }
                             out.write(json.dumps(item, ensure_ascii=False) + "\n")
                         if distant_pairs:
