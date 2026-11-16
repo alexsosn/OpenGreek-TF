@@ -8,9 +8,9 @@ Does surviving Greek attest **a projection of flame itself being called a tongue
 
 ## Corpus-wide evidence
 
-The validated scan covers **4,447 source files and 2,293,990 records**: primary 3,909/1,970,947; secondary 533/307,085; paratext 5/15,958. Reproducible scanner: `python -m opengreek_tf.fire_tongues_scan upstream --output results`. The pinned full-corpus CI in this PR passed on head `b43a9ac`.
+The original pinned run validated coverage of **4,447 source files and 2,293,990 records**: primary 3,909/1,970,947; secondary 533/307,085; paratext 5/15,958. Reproducible scanner: `python -m opengreek_tf.fire_tongues_scan upstream --output results`. Historical full-corpus CI succeeded on head `b43a9ac`. Subsequent review corrections must pass a new exact-head run and may change distant candidate totals.
 
-The broad accent/case-insensitive stem search for γλωσσ-/γλωττ- near πῦρ / φλόγα and related heating vocabulary (including across passage boundaries and distant same-passage occurrences) retrieved **4,865 candidate pair records from 904 source files**. These are pair counts, not independently dated works or true metaphors.
+The first accent/case-insensitive stem search for γλωσσ-/γλωττ- alongside πῦρ / φλόγα and related heating vocabulary retrieved **4,865 historical candidate pair records from 904 source files**. These were lexical leads, not independently dated works or semantic positives. Review found missing distant leads in records that also had close pairs; the revised scanner preserves the earlier screening as historical evidence while making a stronger, explicitly bounded retrieval. Its new candidate count must be taken from the successful updated workflow artifact, not assumed to equal 4,865.
 
 A provisional 904-file / 319-author-or-collection chronological triage yielded:
 
@@ -21,7 +21,7 @@ A provisional 904-file / 319-author-or-collection chronological triage yielded:
 | Post-Acts authors/works | 611 |
 | Mixed anthologies, catenae, pseudepigrapha, later-tradition fragments | 109 |
 
-Every file received a chronological triage and first-pass semantic screening; author labels **are not proof** of the date of each excerpt. A higher-priority shortlist of **142 core tongue/fire pairs separated by ≤35 normalized characters in 74 not-clearly-post-Acts source files** was examined for semantic direction. The remaining **57 mixed-transmission files** were also categorized by source carrier and nearest context; internal attribution and fragment boundaries remain to verify. The short-range threshold does not cap semantic recall.
+Every file received a chronological triage and first-pass semantic screening; author labels **are not proof** of the date of each excerpt. A higher-priority shortlist of **142 core tongue/fire pairs separated by ≤35 normalized characters in 74 not-clearly-post-Acts source files** was examined for semantic direction. The remaining **57 mixed-transmission files** were also categorized by source carrier and nearest context; internal attribution and fragment boundaries remain to verify. The short-range threshold cannot prove semantic recall: distant leads retain only the nearest fire occurrence for each tongue not already paired within the window.
 
 ## Relevant cases and exclusions
 
