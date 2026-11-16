@@ -126,6 +126,23 @@ jobs:
               and hit.text == first_primary["text"]
               for hit in matched_primary
           )
+          # Validate exact original-file/locus filters on genuine pinned
+          # native F/E; never infer witness alignment from a shared locus.
+          primary_at_locus = search_native(
+              out, kind="primary-passage",
+              source_file=original_files[0], locus=first_primary["locus"],
+              contains=first_primary["text"], max_results=10,
+          )
+          assert any(
+              hit.source_file == original_files[0]
+              and hit.source_ordinal == 1
+              and hit.locus == first_primary["locus"]
+              for hit in primary_at_locus
+          )
+          assert search_native(
+              out, kind="primary-passage", source_file=original_files[1],
+              locus=first_primary["locus"],
+          ) == ()
           matched_secondary = search_native(
               out, kind="secondary-witness", contains=first_secondary["text"],
               urn=first_secondary["urn"], edition=first_secondary["edition"],
@@ -137,6 +154,20 @@ jobs:
               and hit.text == first_secondary["text"]
               for hit in matched_secondary
           )
+          witness_at_locus = search_native(
+              out, kind="secondary-witness",
+              source_file=original_files[1], locus=first_secondary["locus"],
+              contains=first_secondary["text"], max_results=10,
+          )
+          assert any(
+              hit.source_file == original_files[1]
+              and hit.source_ordinal == 1
+              and hit.locus == first_secondary["locus"]
+              for hit in witness_at_locus
+          )
+          assert search_native(
+              out, kind="paratext-record", locus=first_primary["locus"],
+          ) == ()
           matched_paratext = search_native(
               out, kind="paratext-record", contains=first_paratext["text"],
               max_results=10,
@@ -155,6 +186,8 @@ jobs:
               "--contains", first_primary["text"].split()[0],
               "--urn", first_primary["urn"],
               "--edition", first_primary["edition"],
+              "--source-file", original_files[0],
+              "--locus", first_primary["locus"],
               "--max-results", "20",
           ], text=True)
           cli_hits = [json.loads(line) for line in stdout.splitlines()]

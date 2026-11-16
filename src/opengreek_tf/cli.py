@@ -84,6 +84,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="All 4,447 original textual files (memory-intensive, unreleased scale)",
     )
     convert_texts.add_argument(
+        "--slot-layout", choices=("runs", "passage"), default="runs",
+        help=(
+            "Experimental text-slot carriage: default runs preserve run-level "
+            "slots; passage uses one text slot per nonempty passage (no run search)"
+        ),
+    )
+    convert_texts.add_argument(
         "--output", type=Path, required=True,
         help="New single native TF graph directory outside the source checkout",
     )
@@ -101,6 +108,8 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--urn", help="Original source row urn field (not inferred CTS)")
     search.add_argument("--edition", help="Original source row edition field")
     search.add_argument("--source", help="Original source row source field")
+    search.add_argument("--source-file", help="Exact original source_file provenance")
+    search.add_argument("--locus", help="Exact original source-authored locus string")
     search.add_argument("--max-results", type=int, default=20)
     return parser
 
@@ -219,6 +228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         stats = materialize_texts(
             snapshot.path, selected, destination, allow_empty_files=empty_files,
+            slot_layout=args.slot_layout,
         )
         validation = validate_native_jsonl_sources(
             snapshot.path, selected, destination, allow_empty_files=empty_files,
@@ -267,6 +277,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
         if not args.all:
             summary["source_files"] = list(selected)
+        if args.slot_layout != "runs":
+            # Preserve default CLI report shape and native TF hashes.
+            summary["slot_layout"] = args.slot_layout
         print(json.dumps(summary, sort_keys=True))
         return 0
 
@@ -274,6 +287,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for hit in search_native(
             args.tf_directory, kind=args.kind, contains=args.contains,
             urn=args.urn, edition=args.edition, source=args.source,
+            source_file=args.source_file, locus=args.locus,
             max_results=args.max_results,
         ):
             print(json.dumps(asdict(hit), ensure_ascii=False, sort_keys=True))

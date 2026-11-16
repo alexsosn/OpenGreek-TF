@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: >-
+  If you use OpenGreek-TF in your research, please cite this software.
+  Cite the upstream Open Greek Corpus data separately under its applicable terms.
+type: software
+title: OpenGreek-TF
+abstract: >-
+  A converter that materializes the Open Greek Corpus as a native Text-Fabric corpus.
+authors:
+  - family-names: Sosnovshchenko
+    given-names: Oleksandr
+repository-code: https://github.com/alexsosn/OpenGreek-TF
+license: MIT
+keywords:
+  - Ancient Greek
+  - Text-Fabric
+  - digital humanities
