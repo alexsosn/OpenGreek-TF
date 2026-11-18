@@ -17,6 +17,8 @@ on:
       - "tests/test_november_text_schema.py"
       - "src/opengreek_tf/native_composer.py"
       - "tests/test_native_cr_source_facts.py"
+      - "tests/test_november_secondary_complete.py"
+      - "src/opengreek_tf/fact_graph.py"
   workflow_dispatch:
 
 permissions:
@@ -338,4 +340,164 @@ jobs:
               "source_sha256": independent.original_source_sha256,
               "native_sha256": report["canonical_sha256"],
               "primary_passage_CR_T_text_supported": False,
+          }, sort_keys=True))
+
+
+      - name: Independently census ALL 338245 original November secondary witness rows
+        shell: python
+        run: |
+          import json
+          from collections import Counter
+          from pathlib import Path
+          from opengreek_tf.record_stream import FieldArray, FieldObject, parse_file
+          from opengreek_tf.release import NOVEMBER_RELEASE
+
+          root = Path("new-source")
+          directory = root / "data" / "corpus_secondary"
+          paths = sorted(directory.glob("*.jsonl"))
+          assert len(paths) == 560
+          evidence = Counter()
+          records = 0
+          empty = []
+          source_files = set()
+          for path in paths:
+              relative = path.relative_to(root).as_posix()
+              source_files.add(relative)
+              file_rows = 0
+              for row in parse_file(root, relative, identity=NOVEMBER_RELEASE):
+                  assert row.occurrence_key == (relative, file_rows + 1)
+                  assert row.family == "secondary"
+                  assert type(row.text) is str
+                  file_rows += 1
+                  records += 1
+                  evidence["rank"] += row.fields.get("rank") is not None
+                  evidence["dubner"] += row.fields.get("dubner_source_scope") is not None
+                  evidence["pindar"] += row.fields.get("pindar_duplicate_review") is not None
+                  evidence["reviewed"] += row.fields.get("reviewed_duplicate_witness") is not None
+                  evidence["current_target"] += row.fields.get("current_target") is not None
+                  evidence["source_char_range"] += row.fields.get("source_char_range") is not None
+                  page = row.fields.get("source_page")
+                  if isinstance(page, FieldObject):
+                      region = page.get("region")
+                      if region is not None:
+                          assert isinstance(region, FieldArray)
+                          assert len(region.items) == 4
+                          assert all(type(value) is float for value in region.items)
+                          evidence["float_regions"] += 1
+                          evidence["float_values"] += len(region.items)
+                      else:
+                          evidence["meibom_pages"] += 1
+              if file_rows == 0:
+                  assert path.stat().st_size == 0
+                  empty.append(relative)
+          assert records == 338245, records
+          assert empty == ["data/corpus_secondary/democritus.fragmenta.jsonl"], empty
+          assert dict(evidence) == {
+              "rank": 306534,
+              "dubner": 27913,
+              "pindar": 6,
+              "reviewed": 119,
+              "current_target": 127,
+              "source_char_range": 27913,
+              "float_regions": 8,
+              "float_values": 32,
+              "meibom_pages": 4235,
+          }, evidence
+          print("NOVEMBER_ALL_SECONDARY_ORIGINAL_PARSER=" + json.dumps({
+              "status": "PASS",
+              "source_release": NOVEMBER_RELEASE.tag,
+              "secondary_source_files": len(source_files),
+              "secondary_original_rows": records,
+              "original_empty_files": empty,
+              "source_variants": dict(sorted(evidence.items())),
+              "full_november_text_corpus_materialized": False,
+          }, sort_keys=True))
+
+      - name: Installed native TF conservation of genuine secondary editorial and float variants
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.release import NOVEMBER_RELEASE
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.record_stream import FieldArray, FieldObject
+          from opengreek_tf.research_queries import search_native
+
+          root = Path("new-source")
+          selected = (
+              "data/corpus/abas.fragmenta.jsonl",
+              "data/corpus_secondary/nicomachus-mathematics.excerpta.jsonl",
+              "data/corpus_secondary/scholia-in-aristophanem.triclinius-meters-dubner-1855.jsonl",
+              "data/corpus_secondary/vitae-pindari-et-varia-de-pindaro.vita-metrica.jsonl",
+              "data/corpus_secondary/cyrillus-theology.commentarii-in-joannem.reviewed-duplicate-witnesses.jsonl",
+              "data/corpus_secondary/hesychius-lexicography.lexicon-o.missing-columns-witnesses.jsonl",
+              "data/paratext/gutenberg/66595.jsonl",
+              "data/paratext/gutenberg/32549.jsonl",
+          )
+          expected_rows = (1, 65, 3, 1, 8, 8, 9, 30)
+          for relative, expected in zip(selected, expected_rows, strict=True):
+              with (root / relative).open("rb") as handle:
+                  assert sum(1 for _ in handle) == expected, relative
+          output = Path("november-secondary-editorial-mixed-tf")
+          command = [
+              "opengreek-tf", "convert-texts", str(root),
+              "--release", NOVEMBER_RELEASE.tag,
+          ]
+          for relative in selected:
+              command.extend(["--file", relative])
+          report = json.loads(subprocess.check_output([
+              *command, "--output", str(output),
+          ], text=True))
+          assert report["revision"] == NOVEMBER_RELEASE.commit
+          assert (report["primary_passages"], report["secondary_witnesses"],
+                  report["paratext_records"]) == (1, 85, 39)
+          assert report["records"] == 125
+          independent = validate_native_jsonl_sources(
+              root, selected, output, identity=NOVEMBER_RELEASE,
+          )
+          assert independent.records == 125
+          assert independent.original_source_sha256 == report["original_source_sha256"]
+          loaded = read_native_records(output)
+          assert len(loaded) == 125
+          assert [row.source_file for row in loaded[70:73]] == [selected[2]] * 3
+          assert loaded[73].source_file == selected[3]
+          hesychius = [row for row in loaded if row.source_file == selected[5]]
+          assert len(hesychius) == 8
+          for row in hesychius:
+              page = row.fields.require("source_page")
+              assert isinstance(page, FieldObject)
+              region = page.require("region")
+              assert isinstance(region, FieldArray)
+              assert len(region.items) == 4
+              assert all(type(value) is float for value in region.items)
+          api = Fabric(locations=str(output), silent="deep").load(
+              "fact_float", silent="deep",
+          )
+          assert api
+          assert len(list(api.F.fact_float.items())) == 32
+          assert not api.F.otype.s("word")
+          hits = search_native(
+              output, kind="secondary-witness",
+              source_file=selected[5], max_results=20,
+          )
+          assert len(hits) == 8
+          assert [(hit.locus, hit.text) for hit in hits] == [
+              (row.fields.require("locus"), row.fields.require("text"))
+              for row in hesychius
+          ]
+          print("NOVEMBER_SECONDARY_REAL_NATIVE_TF=" + json.dumps({
+              "status": "PASS",
+              "original_records": 125,
+              "primary": 1,
+              "secondary": 85,
+              "paratext": 39,
+              "source_float_atoms": 32,
+              "independent_stock_jsonl_conservation": "PASS",
+              "researcher_search_native": "PASS",
+              "source_sha256": independent.original_source_sha256,
+              "native_sha256": report["canonical_sha256"],
+              "all_secondary_records_materialized": False,
           }, sort_keys=True))
