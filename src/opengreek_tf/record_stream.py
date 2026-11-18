@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypeAlias
 
+from .release import NOVEMBER_RELEASE, SUPPORTED_RELEASE, ReleaseIdentity
+
 Family: TypeAlias = Literal["primary", "secondary", "paratext"]
 
 
@@ -84,7 +86,14 @@ class ObjectSpec:
     fields: dict[str, SchemaSpec]
 
 
-SchemaSpec: TypeAlias = type[str] | type[int] | type[bool] | ArraySpec | ObjectSpec
+@dataclass(frozen=True, slots=True)
+class NullableSpec:
+    item: SchemaSpec
+
+
+SchemaSpec: TypeAlias = (
+    type[str] | type[int] | type[bool] | ArraySpec | ObjectSpec | NullableSpec
+)
 
 
 def _array(item: SchemaSpec) -> ArraySpec:
@@ -93,6 +102,10 @@ def _array(item: SchemaSpec) -> ArraySpec:
 
 def _obj(**fields: SchemaSpec) -> ObjectSpec:
     return ObjectSpec(fields)
+
+
+def _nullable(item: SchemaSpec) -> NullableSpec:
+    return NullableSpec(item)
 
 
 # Exact observed field types from the complete pinned-release semantic audit.
@@ -192,8 +205,28 @@ FAMILY_DIR: dict[Family, str] = {
 }
 DIR_FAMILY: dict[str, Family] = {v: k for k, v in FAMILY_DIR.items()}
 
+# A *bounded, source-observed* November grammar extension. The 2026-11-17
+# pinned corpus adds Meibom secondary source_page/evidence and a distinct
+# source-hashed Gutenberg note family. Other new nested OCR/citation formats
+# remain deliberately unsupported until their typed schema/TF proof exists.
+_NOVEMBER_MEIBOM_PAGE = _obj(
+    work=str,
+    scan_page=int,
+    printed_page=int,
+    book=_nullable(str),
+    greek_column=str,
+    duplicate_scan=bool,
+)
+_NOVEMBER_GUTENBERG: dict[str, SchemaSpec] = {
+    "locus": str, "source": str, "source_sha256": str, "text": str,
+}
+
 
 def _decode(value: object, spec: SchemaSpec, *, field: str, context: str) -> FieldValue:
+    if isinstance(spec, NullableSpec):
+        if value is None:
+            return None
+        return _decode(value, spec.item, field=field, context=context)
     if isinstance(spec, ArraySpec):
         if not isinstance(value, list):
             raise RecordParseError(f"{context}: {field}: expected array")
@@ -235,17 +268,25 @@ def _object_no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, obje
     return result
 
 
-def _family_for(relative_file: str) -> Family:
+def _family_for(
+    relative_file: str, *, identity: ReleaseIdentity = SUPPORTED_RELEASE,
+) -> Family:
     path = Path(relative_file)
     if path.as_posix() != relative_file:
         raise RecordParseError(f"noncanonical source path: {relative_file!r}")
     parts = path.parts
+    ordinary = len(parts) == 3 and parts[1] in DIR_FAMILY
+    november_gutenberg = (
+        identity.tag == NOVEMBER_RELEASE.tag
+        and len(parts) == 4
+        and parts[1:3] == ("paratext", "gutenberg")
+    )
     if (
         path.is_absolute()
-        or len(parts) != 3
+        or not parts
         or parts[0] != "data"
-        or parts[1] not in DIR_FAMILY
-        or parts[2] in {"", ".", ".."}
+        or not (ordinary or november_gutenberg)
+        or any(part in {".", ".."} for part in parts)
         or path.suffix != ".jsonl"
     ):
         raise RecordParseError(f"unsupported source JSONL path: {relative_file!r}")
@@ -254,13 +295,33 @@ def _family_for(relative_file: str) -> Family:
 
 
 def _validate_record_variants(
-    family: Family, fields: FieldObject, *, context: str
+    family: Family, fields: FieldObject, *, context: str,
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
 ) -> None:
     """Enforce source-declared tagged field groups established by the audit."""
     if family == "secondary":
         displacement = fields.get("displaced_by")
         rank = fields.get("rank")
         reason = fields.get("secondary_reason")
+        source_page = fields.get("source_page")
+        evidence = fields.get("evidence")
+        if identity.tag == NOVEMBER_RELEASE.tag and (
+            source_page is not None or evidence is not None
+        ):
+            if not isinstance(source_page, FieldObject):
+                raise RecordParseError(f"{context}: source_page is required")
+            if not isinstance(evidence, str):
+                raise RecordParseError(f"{context}: evidence is required")
+            if {key for key, _ in source_page.items} != {
+                "work", "scan_page", "printed_page", "book",
+                "greek_column", "duplicate_scan",
+            }:
+                raise RecordParseError(f"{context}: incomplete source_page fields")
+            if rank is not None or reason is not None or displacement is not None:
+                raise RecordParseError(
+                    f"{context}: Meibom source_page must not claim alignment/rank"
+                )
+            return
         if displacement is not None:
             if rank is not None or reason is not None:
                 raise RecordParseError(
@@ -293,16 +354,31 @@ def _validate_record_variants(
                 )
 
 
-def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
+def parse_file(
+    root: Path, relative_file: str, *,
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
+) -> Iterator[ParsedRecord]:
     """Lazily parse exactly one audited-family JSONL file.
 
     Yields one record at a time, keeps original field order, and identifies a
     source occurrence by physical row number (including validation of blanks).
     """
-    family = _family_for(relative_file)
+    family = _family_for(relative_file, identity=identity)
     file_path = Path(root) / relative_file
     fields_schema = SCHEMAS[family]
     required = REQUIRED[family]
+    if identity.tag == NOVEMBER_RELEASE.tag:
+        if family == "secondary":
+            fields_schema = {
+                **fields_schema, "source_page": _NOVEMBER_MEIBOM_PAGE,
+                "evidence": str,
+            }
+        elif (
+            family == "paratext"
+            and Path(relative_file).parts[2] == "gutenberg"
+        ):
+            fields_schema = _NOVEMBER_GUTENBERG
+            required = frozenset(fields_schema)
 
     try:
         with file_path.open("rb") as source:
@@ -342,7 +418,9 @@ def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
                         )
                     )
                 checked_fields = FieldObject(tuple(fields))
-                _validate_record_variants(family, checked_fields, context=context)
+                _validate_record_variants(
+                    family, checked_fields, context=context, identity=identity,
+                )
                 yield ParsedRecord(
                     family=family,
                     relative_file=relative_file,
@@ -353,15 +431,23 @@ def parse_file(root: Path, relative_file: str) -> Iterator[ParsedRecord]:
         raise RecordParseError(f"cannot read {relative_file}: {exc}") from exc
 
 
-def iter_family(root: Path, family: Family) -> Iterator[ParsedRecord]:
+def iter_family(
+    root: Path, family: Family, *,
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
+) -> Iterator[ParsedRecord]:
     """Yield all source rows in deterministic filename/physical-row order."""
     if family not in FAMILY_DIR:
         raise RecordParseError(f"unsupported source family: {family!r}")
     directory = Path(root) / "data" / FAMILY_DIR[family]
     if not directory.is_dir():
         raise RecordParseError(f"missing audited source directory: {directory}")
-    files = sorted(directory.glob("*.jsonl"), key=lambda path: path.name)
+    if identity.tag == NOVEMBER_RELEASE.tag and family == "paratext":
+        files = sorted(directory.rglob("*.jsonl"))
+    else:
+        files = sorted(directory.glob("*.jsonl"), key=lambda path: path.name)
     if not files:
         raise RecordParseError(f"empty audited source family: {directory}")
     for file in files:
-        yield from parse_file(root, file.relative_to(root).as_posix())
+        yield from parse_file(
+            root, file.relative_to(root).as_posix(), identity=identity,
+        )

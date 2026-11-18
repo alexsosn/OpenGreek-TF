@@ -79,8 +79,27 @@ opengreek-tf fetch upstream/open-greek-november --release corpus-2026-11-17
 opengreek-tf verify-source upstream/open-greek-november --release corpus-2026-11-17
 ```
 
-These commands validate acquisition and the release manifest; they do not enable
-`convert-primary`, `convert-texts` or `audit-source` on the new source yet.
+These commands validate acquisition and the release manifest. The existing
+`convert-primary` and `audit-source` commands remain September-pinned.
+`convert-texts` additionally accepts a **strictly selected** November source subset
+through an explicit `--release`, with all original facts loaded and independently
+validated by Text-Fabric:
+
+```bash
+opengreek-tf convert-texts upstream/open-greek-november \
+  --release corpus-2026-11-17 \
+  --file data/corpus/abas.fragmenta.jsonl \
+  --file data/corpus_secondary/nicomachus-mathematics.excerpta.jsonl \
+  --file data/paratext/gutenberg/66595.jsonl \
+  --output generated/november-selected
+```
+
+This is a bounded migration proof over complete original files, not November
+`--all`. The new release has additional complex record variants, floating-point
+scan coordinates and 73 CR codepoints in paratext that the native writer
+cannot yet preserve. Unsupported variants and CR fail without success rather
+than being normalized or silently omitted. The November full-corpus source,
+metadata/identity, alias, browser and release gates remain open under #88.
 
 Network access belongs to acquisition only. Later conversion commands receive a verified local checkout and must not fetch or repair source data.
 

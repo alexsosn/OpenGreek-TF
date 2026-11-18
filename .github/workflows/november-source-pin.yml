@@ -9,6 +9,12 @@ on:
       - "tests/test_new_release_manifest.py"
       - ".github/workflows/november-source-pin.yml"
       - "docs/research/november-source-migration.md"
+      - "src/opengreek_tf/record_stream.py"
+      - "src/opengreek_tf/text_materializer.py"
+      - "src/opengreek_tf/unaligned_materializer.py"
+      - "src/opengreek_tf/jsonl_conservation.py"
+      - "tests/test_record_stream.py"
+      - "tests/test_november_text_schema.py"
   workflow_dispatch:
 
 permissions:
@@ -39,6 +45,9 @@ jobs:
           printf '%s\n' \
             '/data/corpus_release.json' \
             '/data/public_export.json' \
+            '/data/corpus/' \
+            '/data/corpus_secondary/' \
+            '/data/paratext/' \
             '/data/corpus_changes/dioscorides-pedanius.de-materia-medica.printed-divisions.json' \
             > new-source/.git/info/sparse-checkout
           git -C new-source fetch --depth 1 --filter=blob:none origin \
@@ -99,4 +108,150 @@ jobs:
               "dioscorides_locus_redirects": len(change["locus_map"]),
               "dioscorides_withdrawn": len(change["withdrawn"]),
               "native_tf_migration_complete": False,
+          }, sort_keys=True))
+
+      - name: Audit ALL actual November original text-family schemas, nested paths and CR
+        shell: python
+        run: |
+          from collections import Counter
+          from pathlib import Path
+          import json
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.release import NOVEMBER_RELEASE
+
+          root = Path("new-source")
+          assert verify_source(root, identity=NOVEMBER_RELEASE)
+          def kind(x):
+              if x is None:
+                  return "null"
+              if type(x) is bool:
+                  return "bool"
+              return type(x).__name__
+          def scan(value, path, nested, cr):
+              if type(value) is dict:
+                  nested[("object", path, tuple(value))] += 1
+                  for k, v in value.items():
+                      scan(v, f"{path}.{k}" if path else k, nested, cr)
+              elif type(value) is list:
+                  nested[("array", path, kind(value[0]) if value else "empty")] += 1
+                  for item in value:
+                      scan(item, path + "[]", nested, cr)
+              elif type(value) is str and "\r" in value:
+                  cr[path] += value.count("\r")
+          report = {}
+          for family, dirname, expected in (
+              ("primary", "corpus", 3939),
+              ("secondary", "corpus_secondary", 560),
+              ("paratext", "paratext", 17),
+          ):
+              paths = sorted((root / "data" / dirname).rglob("*.jsonl"))
+              assert len(paths) == expected, (family, len(paths), expected)
+              field_types = Counter()
+              variants = Counter()
+              nested = Counter()
+              cr = Counter()
+              rows = 0
+              files_with_rows = 0
+              for path in paths:
+                  file_rows = 0
+                  with path.open("rb") as source:
+                      for lineno, raw in enumerate(source, 1):
+                          obj = json.loads(raw)
+                          assert type(obj) is dict, (path, lineno)
+                          assert type(obj.get("text")) is str, (path, lineno)
+                          rows += 1
+                          file_rows += 1
+                          variants[tuple(sorted(obj))] += 1
+                          for name, value in obj.items():
+                              field_types[(name, kind(value))] += 1
+                              if type(value) in (dict, list) or (type(value) is str and "\r" in value):
+                                  scan(value, name, nested, cr)
+                  files_with_rows += file_rows > 0
+              report[family] = {
+                  "files": len(paths), "nonempty_files": files_with_rows,
+                  "rows": rows,
+                  "field_types": [{"field": k, "type": t, "count": n}
+                                  for (k, t), n in sorted(field_types.items())],
+                  "row_variants": [{"keys": list(keys), "count": n}
+                                   for keys, n in variants.most_common(30)],
+                  "nested_types": [{"type": t, "path": p, "shape": list(shape) if type(shape) is tuple else shape, "count": n}
+                                   for (t, p, shape), n in nested.most_common(55)],
+                  "cr_paths": dict(sorted(cr.items())),
+                  "nested_paratext_paths": [
+                      p.relative_to(root).as_posix() for p in paths
+                      if len(p.relative_to(root).parts) > 3
+                  ][:25] if family == "paratext" else [],
+              }
+          print("NOVEMBER_SOURCE_SCHEMA_CENSUS=" + json.dumps(report, ensure_ascii=True, sort_keys=True))
+          with open(__import__("os").environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("## Complete pinned November source schema census\n\n")
+              for family, facts in report.items():
+                  f.write(f"- {family}: {facts['files']} files, {facts['rows']} original rows, "
+                          f"{len(facts['field_types'])} field+type variants, "
+                          f"CR paths {facts['cr_paths']}\n")
+
+      - name: Real November primary + 65 Meibom secondary + 9 nested Gutenberg TF CLI smoke
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.release import NOVEMBER_RELEASE
+
+          selected = (
+              "data/corpus/abas.fragmenta.jsonl",
+              "data/corpus_secondary/nicomachus-mathematics.excerpta.jsonl",
+              "data/paratext/gutenberg/66595.jsonl",
+          )
+          root = Path("new-source")
+          destination = Path("real-november-selected-tf")
+          command = [
+              "opengreek-tf", "convert-texts", str(root),
+              "--release", NOVEMBER_RELEASE.tag,
+          ]
+          for file in selected:
+              command.extend(["--file", file])
+          output = subprocess.check_output(
+              [*command, "--output", str(destination)], text=True,
+          )
+          report = json.loads(output)
+          assert report["revision"] == NOVEMBER_RELEASE.commit
+          assert (report["primary_passages"], report["secondary_witnesses"],
+                  report["paratext_records"]) == (1, 65, 9)
+          assert report["records"] == 75
+          loaded = read_native_records(destination)
+          assert len(loaded) == 75
+          first_meibom = loaded[1]
+          assert first_meibom.fields.require("source_page").require("book") is None
+          first_gutenberg = loaded[-9]
+          assert first_gutenberg.source_file == selected[2]
+          assert first_gutenberg.fields.require("source_sha256")
+          independent = validate_native_jsonl_sources(
+              root, selected, destination, identity=NOVEMBER_RELEASE,
+          )
+          assert independent.records == 75
+          assert independent.original_source_sha256 == report["original_source_sha256"]
+
+          # One actually published separate Gutenberg file contains source CR.
+          # Do not report native output when Text-Fabric cannot preserve U+000D.
+          unsafe = Path("november-cr-unsafe-tf")
+          check = subprocess.run([
+              "opengreek-tf", "convert-texts", str(root),
+              "--release", NOVEMBER_RELEASE.tag,
+              "--file", "data/paratext/gutenberg/32549.jsonl",
+              "--output", str(unsafe),
+          ], capture_output=True, text=True)
+          assert check.returncode != 0
+          assert "carriage return" in check.stderr
+          assert not unsafe.exists()
+
+          print("NOVEMBER_SELECTED_REAL_TF=" + json.dumps({
+              "status": "PASS", "rows": independent.records,
+              "primary": 1, "secondary": 65, "nested_paratext": 9,
+              "source_sha256": independent.original_source_sha256,
+              "native_sha256": report["canonical_sha256"],
+              "cr_containing_source_file": "REJECTED_LOSSLESSLY",
+              "full_november_release": False,
           }, sort_keys=True))

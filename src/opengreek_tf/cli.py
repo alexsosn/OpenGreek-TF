@@ -88,6 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
     convert_texts.add_argument(
         "source", help="Clean Git checkout of exact supported Open Greek release",
     )
+    convert_texts.add_argument(
+        "--release", choices=(SUPPORTED_RELEASE.tag, NOVEMBER_RELEASE.tag),
+        default=SUPPORTED_RELEASE.tag,
+        help="Explicit source version; November supports selected files only",
+    )
     text_selection = convert_texts.add_mutually_exclusive_group(required=True)
     text_selection.add_argument(
         "--file", action="append", dest="files",
@@ -230,7 +235,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "convert-texts":
-        snapshot = verify_source(args.source, identity=SUPPORTED_RELEASE)
+        identity = release_by_tag(args.release)
+        if args.all and identity.tag == NOVEMBER_RELEASE.tag:
+            raise ValueError(
+                "November complete corpus conversion is not yet supported; "
+                "use --file for validated source subsets only"
+            )
+        snapshot = verify_source(args.source, identity=identity)
         destination = args.output.resolve()
         if destination.is_relative_to(snapshot.path.resolve()):
             raise ValueError("native TF output must be outside the source checkout")
@@ -247,10 +258,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         stats = materialize_texts(
             snapshot.path, selected, destination, allow_empty_files=empty_files,
-            slot_layout=args.slot_layout,
+            slot_layout=args.slot_layout, identity=identity,
         )
         validation = validate_native_jsonl_sources(
             snapshot.path, selected, destination, allow_empty_files=empty_files,
+            identity=identity,
         )
         if (
             validation.records != stats.records
@@ -273,7 +285,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         # Do not publish success if the source checkout changed during the
         # conversion or the independently decoded original JSONL verification.
-        final = verify_source(snapshot.path, identity=SUPPORTED_RELEASE)
+        final = verify_source(snapshot.path, identity=identity)
         if final.revision != snapshot.revision or final.path.resolve() != snapshot.path.resolve():
             raise ValueError("original source changed during full-text conversion")
         manifest = native_tf_manifest(destination)

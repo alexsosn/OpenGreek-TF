@@ -15,6 +15,7 @@ from typing import Any
 
 from .native_composer import NativeComposeError, NativeRecord, iter_native_records
 from .record_stream import FieldArray, FieldObject, FieldValue
+from .release import NOVEMBER_RELEASE, SUPPORTED_RELEASE, ReleaseIdentity
 
 _KINDS = {
     "corpus": ("primary-passage", "primary"),
@@ -93,6 +94,7 @@ def _source_fact_count(value: Any) -> int:
 def validate_native_jsonl_sources(
     root: Path, relative_files: tuple[str, ...], destination: Path, *,
     allow_empty_files: frozenset[str] = frozenset(),
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
 ) -> JsonlConservationReport:
     """Read source bytes and reload native Text-Fabric to verify every occurrence.
 
@@ -116,12 +118,19 @@ def validate_native_jsonl_sources(
         if type(relative) is not str:
             raise JsonlConservationError("source path must be a string")
         path = Path(relative)
+        standard = len(path.parts) == 3
+        november_gutenberg = (
+            identity.tag == NOVEMBER_RELEASE.tag
+            and len(path.parts) == 4
+            and path.parts[1:3] == ("paratext", "gutenberg")
+        )
         if (
             path.is_absolute()
             or path.as_posix() != relative
-            or len(path.parts) != 3
+            or not (standard or november_gutenberg)
             or path.parts[0] != "data"
             or path.parts[1] not in _KINDS
+            or any(part in {".", ".."} for part in path.parts)
             or path.suffix != ".jsonl"
         ):
             raise JsonlConservationError(f"invalid original JSONL source path: {relative}")
@@ -131,12 +140,12 @@ def validate_native_jsonl_sources(
                 raise JsonlConservationError(
                     f"source path escapes root or is not a file: {relative}"
                 )
-            identity = resolved_source.stat()
+            file_stat = resolved_source.stat()
         except (OSError, RuntimeError) as exc:
             raise JsonlConservationError(
                 f"missing or inaccessible original source: {relative}"
             ) from exc
-        physical = (identity.st_dev, identity.st_ino)
+        physical = (file_stat.st_dev, file_stat.st_ino)
         if physical in physical_ids:
             raise JsonlConservationError(f"duplicate physical original source file: {relative}")
         physical_ids.add(physical)
