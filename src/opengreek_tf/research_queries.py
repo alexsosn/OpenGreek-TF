@@ -46,7 +46,74 @@ _SOURCE_STRINGS = frozenset({
 })
 
 
-def _direct_source_strings(api: Any, owner: int) -> dict[str, str]:
+def _exact_CR_source_string(
+    api: Any, owner: int, fact: int, *, has_fragment_text: bool,
+) -> str:
+    """Source-exact original string from genuine ordered integer-13 F/E.
+
+    This is an independent query-time reconstruction. Ordinary source text
+    must remain on its existing direct fact_text fast path. No raw CR is
+    stored in Text-Fabric string features or inferred by T.text.
+    """
+    if api.F.otype.v(owner) != "metadataRecord":
+        raise NativeResearchQueryError("primary passage acquired CR source fragments")
+    owner_slots = tuple(api.E.oslots.s(owner))
+    if len(owner_slots) != 1:
+        raise NativeResearchQueryError("metadata record has inauthentic text slots")
+    fragments = tuple(api.E.has_cr_fragment.f(fact))
+    if not fragments:
+        raise NativeResearchQueryError("missing original CR fragments")
+    seen_nodes: set[int] = set()
+    by_position: dict[int, tuple[str, str | int]] = {}
+    for fragment in fragments:
+        position = api.F.fragment_position.v(fragment)
+        kind = api.F.fragment_kind.v(fragment)
+        literal = (
+            api.F.fragment_text.v(fragment) if has_fragment_text else None
+        )
+        codepoint = api.F.fragment_codepoint.v(fragment)
+        if (
+            fragment in seen_nodes
+            or api.F.otype.v(fragment) != "crFragment"
+            or tuple(api.E.oslots.s(fragment)) != owner_slots
+            or type(position) is not int or position < 0
+            or position in by_position
+        ):
+            raise NativeResearchQueryError("forged CR fragment or source provenance")
+        seen_nodes.add(fragment)
+        if kind == "run":
+            if (
+                type(literal) is not str or not literal
+                or "\r" in literal or codepoint is not None
+            ):
+                raise NativeResearchQueryError("invalid literal source CR run")
+            by_position[position] = ("run", literal)
+        elif kind == "cr":
+            if type(codepoint) is not int or codepoint != 13 or literal is not None:
+                raise NativeResearchQueryError("invalid native integer-13 CR atom")
+            by_position[position] = ("cr", 13)
+        else:
+            raise NativeResearchQueryError("unrecognized native CR source fragment")
+    if sorted(by_position) != list(range(len(by_position))):
+        raise NativeResearchQueryError("missing or reordered CR source fragment")
+    ordered = [by_position[index] for index in range(len(by_position))]
+    raw = "".join(value if isinstance(value, str) else "\r" for _, value in ordered)
+    expected: list[tuple[str, str | int]] = []
+    parts = raw.split("\r")
+    for index, part in enumerate(parts):
+        if part:
+            expected.append(("run", part))
+        if index < len(parts) - 1:
+            expected.append(("cr", 13))
+    if "\r" not in raw or ordered != expected:
+        raise NativeResearchQueryError("uncanonical CR source string topology")
+    return raw
+
+
+def _direct_source_strings(
+    api: Any, owner: int, *, has_cr_fragments: bool,
+    has_fragment_text: bool,
+) -> dict[str, str]:
     """Read top-level original JSON string members *through native F/E*.
 
     One has_fact edge starts at the owner and points to the source object.
@@ -68,6 +135,17 @@ def _direct_source_strings(api: Any, owner: int) -> dict[str, str]:
             continue
         if field_kind == "str":
             value = api.F.fact_text.v(fact)
+            fragment_units = (
+                tuple(api.E.has_cr_fragment.f(fact)) if has_cr_fragments else ()
+            )
+            if fragment_units:
+                if value is not None:
+                    raise NativeResearchQueryError("CR fact has conflicting native text")
+                value = _exact_CR_source_string(
+                    api, owner, fact, has_fragment_text=has_fragment_text,
+                )
+            elif isinstance(value, str) and "\r" in value:
+                raise NativeResearchQueryError("raw CR in Text-Fabric string feature")
             if type(value) is not str:
                 raise NativeResearchQueryError(f"invalid native source string {name}")
             members[name] = value
@@ -127,9 +205,28 @@ def search_native(
         or (kind == "primary-passage" and "form" not in node_features)
     ):
         raise NativeResearchQueryError("missing native source F/E features")
+    has_cr_fragments = "has_cr_fragment" in edge_features
+    fragment_features = {
+        "fragment_kind", "fragment_position", "fragment_codepoint",
+        "fragment_text",
+    }
+    if (
+        (has_cr_fragments and not {
+            "fragment_kind", "fragment_position", "fragment_codepoint",
+        }.issubset(node_features))
+        or (not has_cr_fragments and bool(fragment_features & node_features))
+    ):
+        raise NativeResearchQueryError("incomplete or forged native CR feature schema")
     to_load = needed | {"has_fact"}
     if kind == "primary-passage":
         to_load.add("form")
+    if has_cr_fragments:
+        to_load.update({
+            "has_cr_fragment", "fragment_kind", "fragment_position",
+            "fragment_codepoint",
+        })
+        if "fragment_text" in node_features:
+            to_load.add("fragment_text")
     api: Any = fabric.load(" ".join(sorted(to_load)), silent="deep")
     if not api:
         raise NativeResearchQueryError("cannot load native source F/E features")
@@ -142,7 +239,10 @@ def search_native(
     for owner in ordered:
         if api.F.record_kind.v(owner) != kind:
             continue
-        fields = _direct_source_strings(api, owner)
+        fields = _direct_source_strings(
+            api, owner, has_cr_fragments=has_cr_fragments,
+            has_fragment_text="fragment_text" in node_features,
+        )
         text = fields["text"]
         if kind == "primary-passage":
             rendered = api.T.text(owner, fmt="text-orig-full")
