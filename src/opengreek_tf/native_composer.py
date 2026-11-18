@@ -8,6 +8,7 @@ The loader independently reconstructs every source graph from F/E.
 from __future__ import annotations
 
 import hashlib
+import math
 import json
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -146,6 +147,8 @@ def _preflight(
                 available.add("fact_text")
             if node.kind in {"int", "bool"}:
                 available.add("fact_int")
+            if node.kind == "float":
+                available.add("fact_float")
         # A full FactGraph no longer remains reachable across the entire
         # preflight. The CV director rebuilds at most one validated graph.
         del graph
@@ -326,6 +329,13 @@ def write_native_record_factory(
                     if not isinstance(fact.value, (int, bool)):
                         raise NativeComposeError("invalid source numeric scalar")
                     values["fact_int"] = int(fact.value)
+                if fact.kind == "float":
+                    if type(fact.value) is not float or not math.isfinite(fact.value):
+                        raise NativeComposeError("invalid original source float scalar")
+                    # Exact binary scalar, tagged as a float in native TF.
+                    # No JSON blob, string-to-float coercion, or lossy
+                    # native TF integer cast; float.hex is injective.
+                    values["fact_float"] = fact.value.hex()
                 cv.feature(handle, **values)
             for fact in graph.nodes:
                 if fact.parent_id is None:
@@ -435,7 +445,7 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
         "fragment_kind", "fragment_position",
         "fragment_text", "fragment_codepoint",
     }
-    optional = {"fact_key", "fact_text", "fact_int", "form"} | fragment_features
+    optional = {"fact_key", "fact_text", "fact_int", "fact_float", "form"} | fragment_features
     required_nodes = (mandatory - {"has_fact"}) | {"otype"}
     declared_nodes = set(discovered["nodes"])
     declared_edges = set(discovered["edges"])
@@ -581,17 +591,20 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
             if (
                 type(local_id) is not int or local_id in observed
                 or type(position) is not int
-                or kind not in {"object", "array", "str", "int", "bool", "null"}
+                or kind not in {"object", "array", "str", "int", "float", "bool", "null"}
             ):
                 raise NativeComposeError("invalid local source fact identity/type")
             text = api.F.fact_text.v(handle) if "fact_text" in declared else None
             number = api.F.fact_int.v(handle) if "fact_int" in declared else None
+            float_hex = (
+                api.F.fact_float.v(handle) if "fact_float" in declared else None
+            )
             fragments = (
                 tuple(api.E.has_cr_fragment.f(handle)) if has_cr_fragments else ()
             )
-            value: str | int | bool | None
+            value: str | int | float | bool | None
             if kind == "str":
-                if number is not None:
+                if number is not None or float_hex is not None:
                     raise NativeComposeError("bad source string scalar")
                 if fragments:
                     if text is not None or is_text:
@@ -666,13 +679,31 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
                         raise NativeComposeError("bad original source string scalar")
                     value = text
             elif kind in {"int", "bool"}:
-                if fragments or type(number) is not int or text is not None:
+                if (
+                    fragments or type(number) is not int or text is not None
+                    or float_hex is not None
+                ):
                     raise NativeComposeError("bad source numeric scalar")
                 if kind == "bool" and number not in (0, 1):
                     raise NativeComposeError("invalid native boolean value")
                 value = bool(number) if kind == "bool" else number
+            elif kind == "float":
+                if (
+                    fragments or type(float_hex) is not str or text is not None
+                    or number is not None
+                ):
+                    raise NativeComposeError("bad native typed float scalar")
+                try:
+                    value = float.fromhex(float_hex)
+                except ValueError as exc:
+                    raise NativeComposeError("corrupt native float payload") from exc
+                if not math.isfinite(value) or value.hex() != float_hex:
+                    raise NativeComposeError("noncanonical or nonfinite native float")
             else:
-                if fragments or text is not None or number is not None:
+                if (
+                    fragments or text is not None or number is not None
+                    or float_hex is not None
+                ):
                     raise NativeComposeError("container/null acquired scalar payload")
                 value = None
             observed[local_id] = FactNode(
@@ -765,6 +796,7 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
         "fact_key": fact_handles,
         "fact_text": fact_handles,
         "fact_int": fact_handles,
+        "fact_float": fact_handles,
         "fragment_kind": fragment_handles,
         "fragment_position": fragment_handles,
         "fragment_text": fragment_handles,
