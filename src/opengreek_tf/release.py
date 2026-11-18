@@ -10,11 +10,13 @@ class ReleaseIdentity:
     commit: str
     release_id: str
     corpus_sha256: str
-    catalog_sha256: str
-    generated_from_commit: str
+    catalog_sha256: str | None
+    generated_from_commit: str | None
     works: int
     passages: int
     greek_tokens: int
+    manifest_path: str | None = None
+    release_date: str | None = None
 
 
 SUPPORTED_RELEASE = ReleaseIdentity(
@@ -29,3 +31,30 @@ SUPPORTED_RELEASE = ReleaseIdentity(
     passages=1_970_947,
     greek_tokens=65_285_435,
 )
+
+
+# Opt-in candidate: tagged 2026-11-17 source, NOT YET a converted TF release.
+# GitHub's annotated tag object c06aecc... is not its publishing commit.
+NOVEMBER_RELEASE = ReleaseIdentity(
+    repository="https://github.com/open-greek/open-greek-corpus.git",
+    tag="corpus-2026-11-17",
+    commit="122f2cba907dbac0af63f75cf1a54fa3309f36ba",
+    release_id="corpus-2026-11-17",
+    corpus_sha256="0690bc3e43365b021ec7b201689456b5fe0f9e9d1abae3b846e6158d7cd09e33",
+    catalog_sha256=None,
+    generated_from_commit=None,
+    works=3_939,
+    passages=1_913_683,
+    greek_tokens=65_271_607,
+    manifest_path="data/public_export.json",
+    release_date="2026-11-17",
+)
+
+
+def release_by_tag(tag: str) -> ReleaseIdentity:
+    """Resolve only known immutable source snapshots; never an arbitrary Git ref."""
+    if tag == SUPPORTED_RELEASE.tag:
+        return SUPPORTED_RELEASE
+    if tag == NOVEMBER_RELEASE.tag:
+        return NOVEMBER_RELEASE
+    raise ValueError(f"unsupported Open Greek source release: {tag!r}")
