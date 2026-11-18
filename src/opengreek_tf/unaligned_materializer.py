@@ -61,10 +61,10 @@ def _check_files(
         try:
             if not physical.is_file():
                 raise ValueError(f"unaligned source is not a regular file: {relative}")
-            identity = physical.stat()
+            file_stat = physical.stat()
         except OSError as exc:
             raise ValueError(f"unaligned source file cannot be read: {relative}") from exc
-        key = (identity.st_dev, identity.st_ino)
+        key = (file_stat.st_dev, file_stat.st_ino)
         if key in physical_files:
             raise ValueError(f"duplicate physical unaligned source file: {relative}")
         physical_files.add(key)
