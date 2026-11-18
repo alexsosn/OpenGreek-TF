@@ -106,6 +106,22 @@ fake Greek tokens or normalize line endings. Unsupported source variants
 fail closed. Full November coverage, aliases, browser rendering and release
 gates remain open under #88/#29.
 
+November secondary research examples also preserve source-authored
+Dubner character ranges, former-primary Pindar evidence, duplicate
+review status and exact floating-point image coordinates. For example:
+
+```bash
+opengreek-tf convert-texts upstream/open-greek-november \
+  --release corpus-2026-11-17 \
+  --file data/corpus_secondary/scholia-in-aristophanem.triclinius-meters-dubner-1855.jsonl \
+  --file data/corpus_secondary/cyrillus-theology.commentarii-in-joannem.reviewed-duplicate-witnesses.jsonl \
+  --file data/corpus_secondary/hesychius-lexicography.lexicon-o.missing-columns-witnesses.jsonl \
+  --output generated/november-editorial-witnesses
+```
+
+The 560-file / 338,245-row secondary parser census is tested separately
+from the full November native memory/build release gate.
+
 Network access belongs to acquisition only. Later conversion commands receive a verified local checkout and must not fetch or repair source data.
 
 ## Verified selected-file native TF conversion (development)
