@@ -126,11 +126,20 @@ def _preflight(
         fact_nodes += graph.declared_size
         _update_source_signature(signature, record, graph)
         for node in graph.nodes:
-            if (
-                (node.key is not None and "\r" in node.key)
-                or (isinstance(node.value, str) and "\r" in node.value)
-            ):
-                raise NativeComposeError("carriage return in native fact")
+            if node.key is not None and "\r" in node.key:
+                raise NativeComposeError("carriage return in source fact key")
+            if isinstance(node.value, str) and "\r" in node.value:
+                if record.text is not None:
+                    raise NativeComposeError("carriage return in primary source fact")
+                # TF13 cannot roundtrip literal CR feature strings. Only
+                # metadata source strings may use native ordered integer-13
+                # fragments; passage T.text remains explicitly CR-unsafe.
+                available.update({
+                    "has_cr_fragment", "fragment_kind", "fragment_position",
+                    "fragment_codepoint",
+                })
+                if any(node.value.split("\r")):
+                    available.add("fragment_text")
             if node.key is not None:
                 available.add("fact_key")
             if node.kind == "str":
@@ -246,6 +255,8 @@ def write_native_record_factory(
     ints = {"source_ordinal", "source_seq", "fact_count", "fact_id", "fact_position"}
     if "fact_int" in available:
         ints.add("fact_int")
+    if "has_cr_fragment" in available:
+        ints.update({"fragment_position", "fragment_codepoint"})
 
     def director(cv: CV) -> None:
         replay_signature = hashlib.sha256()
@@ -309,7 +320,8 @@ def write_native_record_factory(
                 if fact.kind == "str":
                     if type(fact.value) is not str:
                         raise NativeComposeError("invalid source string scalar")
-                    values["fact_text"] = fact.value
+                    if "\r" not in fact.value:
+                        values["fact_text"] = fact.value
                 if fact.kind in {"int", "bool"}:
                     if not isinstance(fact.value, (int, bool)):
                         raise NativeComposeError("invalid source numeric scalar")
@@ -322,6 +334,44 @@ def write_native_record_factory(
                     cv.edge(
                         handles[fact.parent_id], handles[fact.node_id], has_fact=None,
                     )
+            if "has_cr_fragment" in available:
+                for fact in graph.nodes:
+                    if (
+                        fact.kind != "str" or not isinstance(fact.value, str)
+                        or "\r" not in fact.value
+                    ):
+                        continue
+                    if textual:
+                        raise NativeComposeError(
+                            "carriage return in replayed primary source fact"
+                        )
+                    # Only observed CR-bearing native sourceFact scalars get
+                    # extra first-class F/E nodes. Old source graphs, text
+                    # slots, Text-Fabric layouts and canonical hashes stay
+                    # byte-for-byte unchanged without CR.
+                    position = 0
+                    parts = fact.value.split("\r")
+                    for index, piece in enumerate(parts):
+                        if piece:
+                            run = cv.node("crFragment", slots=[source_atom[1]])
+                            cv.feature(
+                                run, fragment_kind="run",
+                                fragment_position=position, fragment_text=piece,
+                            )
+                            cv.edge(
+                                handles[fact.node_id], run, has_cr_fragment=None,
+                            )
+                            position += 1
+                        if index < len(parts) - 1:
+                            cr = cv.node("crFragment", slots=[source_atom[1]])
+                            cv.feature(
+                                cr, fragment_kind="cr",
+                                fragment_position=position, fragment_codepoint=13,
+                            )
+                            cv.edge(
+                                handles[fact.node_id], cr, has_cr_fragment=None,
+                            )
+                            position += 1
         if replay_rows != stats.records or replay_signature.hexdigest() != preflight_signature:
             raise NativeComposeError("original source changed between preflight and TF replay")
 
