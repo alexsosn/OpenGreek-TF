@@ -22,8 +22,8 @@ from opengreek_tf.native_composer import (
     write_native_records,
 )
 from opengreek_tf.record_stream import FieldObject
-from opengreek_tf.research_queries import search_native
 from opengreek_tf.release import NOVEMBER_RELEASE
+from opengreek_tf.research_queries import search_native
 from opengreek_tf.text_materializer import materialize_texts
 from opengreek_tf.tf_integrity import native_tf_manifest
 
