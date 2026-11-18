@@ -28,7 +28,7 @@ CYRIL = (
 )
 HESYCHIUS = "data/corpus_secondary/hesychius-lexicography.lexicon-o.missing-columns-witnesses.jsonl"
 
-BASE = {
+BASE: dict[str, object] = {
     "urn": "scholia-in-aristophanem.triclinius-meters-dubner-1855",
     "edition": "dubner-1855-legacy-witnesses",
     "locus": "scholia_aristoph_dubner_0040.2",
@@ -41,7 +41,7 @@ TARGET = {
     "path": "data/corpus/cyrillus-theology.commentarii-in-joannem.jsonl",
     "locus": "reviewed-duplicate.PG073.483",
 }
-DUBNER_ROW = {
+DUBNER_ROW: dict[str, object] = {
     **BASE,
     "original_locus": "scholia_aristoph_dubner_0040.2",
     "original_work": (
@@ -58,7 +58,7 @@ DUBNER_ROW = {
         "authority": "data/corpus_changes/dubner-1855-scope/changes.json",
     },
 }
-CYRIL_ROW = {
+CYRIL_ROW: dict[str, object] = {
     **BASE,
     "cts": "urn:cts:greekLit:tlg4090.tlg002",
     "source_role": "literal-duplicate-reading",
@@ -73,7 +73,7 @@ CYRIL_ROW = {
         "key": "cyril:PG073.483",
     },
 }
-PIN_ROW = {
+PIN_ROW: dict[str, object] = {
     **BASE,
     "text_lines": ["Πίνδαρον", "γείνατο"],
     "original_urn": "tlg4170.tlg001c",
@@ -99,7 +99,7 @@ PIN_ROW = {
     },
     "independent_witness": False,
 }
-HESYCHIUS_ROW = {
+HESYCHIUS_ROW: dict[str, object] = {
     **BASE,
     "source_role": "literal-gap-OCR-witness",
     "source_page": {
@@ -245,7 +245,8 @@ def test_former_primary_pindar_rejects_incomplete_and_forged_evidence(
 def test_version_scoped_four_real_shape_files_become_one_conserved_native_TF(
     tmp_path: Path,
 ) -> None:
-    sources = [(DUBNER, DUBNER_ROW), (PIN, PIN_ROW), (CYRIL, CYRIL_ROW),
+    sources: list[tuple[str, dict[str, object]]] = [
+        (DUBNER, DUBNER_ROW), (PIN, PIN_ROW), (CYRIL, CYRIL_ROW),
                (HESYCHIUS, HESYCHIUS_ROW)]
     for name, source in sources:
         _record(tmp_path, name, source)
