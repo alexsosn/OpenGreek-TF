@@ -151,6 +151,17 @@ jobs:
               assert independent.original_source_sha256 == (
                   "a644858e5ada9907b8e2c8fe8f28aa574ce6c9f0b9b144667c3c0548600ca806"
               )
+          else:
+              # Independent stock JSONL/Fabric source check, pinned once
+              # the original 382-file primary rung passed successfully.
+              assert rung_name == "extended-130k"
+              assert primary.file_count == 382
+              assert primary.primary_rows == 131_821
+              assert independent.source_fact_nodes == 1_003_224
+              assert independent.source_unicode_codepoints == 30_434_149
+              assert independent.original_source_sha256 == (
+                  "06119f5e48700aeb44b2f06edc7f3dcf4149e06277bd333947e4c0c0d808f21a"
+              )
           manifest = native_tf_manifest(output)
           assert manifest.output_bytes == report["tf_bytes"]
           assert manifest.output_bytes > 0
@@ -161,6 +172,11 @@ jobs:
           if rung_name == "reference-82k":
               assert manifest.canonical_sha256 == (
                   "c2b51974b6ca3d16f0d1422c1b8f080827c8024f3817d324c2f8b836b9ecb13e"
+              )
+          else:
+              assert manifest.output_bytes == 221_482_878
+              assert manifest.canonical_sha256 == (
+                  "6f3aac47b8606dacb03561a723f66f4249de95b06de81fe61e8a3397320d3dec"
               )
           fabric = Fabric(locations=str(output), silent="deep")
           api = fabric.load("source_seq source_record_id record_kind has_fact", silent="deep")
