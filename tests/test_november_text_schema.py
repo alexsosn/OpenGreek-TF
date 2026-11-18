@@ -15,7 +15,7 @@ import pytest
 from opengreek_tf.cli import main
 from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
 from opengreek_tf.native_composer import NativeComposeError, read_native_records
-from opengreek_tf.record_stream import FieldArray, FieldObject, RecordParseError, iter_family, parse_file
+from opengreek_tf.record_stream import FieldObject, RecordParseError, iter_family, parse_file
 from opengreek_tf.release import NOVEMBER_RELEASE
 from opengreek_tf.source import SourceSnapshot
 
