@@ -15,7 +15,12 @@ import pytest
 from opengreek_tf.cli import main
 from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
 from opengreek_tf.native_composer import NativeComposeError, read_native_records
-from opengreek_tf.record_stream import FieldObject, RecordParseError, iter_family, parse_file
+from opengreek_tf.record_stream import (
+    FieldObject,
+    RecordParseError,
+    iter_family,
+    parse_file,
+)
 from opengreek_tf.release import NOVEMBER_RELEASE
 from opengreek_tf.source import SourceSnapshot
 
@@ -90,7 +95,8 @@ def test_november_nested_gutenberg_source_exact_text_and_physical_path(
     rows = list(parse_file(tmp_path, PARATEXT, identity=NOVEMBER_RELEASE))
     assert len(rows) == 1
     assert rows[0].occurrence_key == (PARATEXT, 1)
-    assert rows[0].fields.require("source_sha256").startswith("33762")
+    digest = rows[0].fields.require("source_sha256")
+    assert isinstance(digest, str) and digest.startswith("33762")
     assert rows[0].text == "l, 7. ἅμα B. μοι or ἐμοὶ."
     assert [r.relative_file for r in iter_family(
         tmp_path, "paratext", identity=NOVEMBER_RELEASE,
@@ -177,7 +183,8 @@ def test_november_selected_originals_become_one_conserved_native_tf_graph(
         ("greek_column", "left"),
         ("duplicate_scan", False),
     ))
-    assert rows[2].fields.require("source_sha256").startswith("33762")
+    digest = rows[2].fields.require("source_sha256")
+    assert isinstance(digest, str) and digest.startswith("33762")
     report = validate_native_jsonl_sources(
         root, (PRIMARY, SECONDARY, PARATEXT), output,
         identity=NOVEMBER_RELEASE,
