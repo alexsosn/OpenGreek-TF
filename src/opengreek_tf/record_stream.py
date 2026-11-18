@@ -99,9 +99,16 @@ class ChoiceSpec:
     options: tuple[ObjectSpec, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ScalarChoiceSpec:
+    """Explicit union of scalar source types, never Python numeric coercion."""
+
+    options: tuple[type[str] | type[int], ...]
+
+
 SchemaSpec: TypeAlias = (
     type[str] | type[int] | type[float] | type[bool]
-    | ArraySpec | ObjectSpec | NullableSpec | ChoiceSpec
+    | ArraySpec | ObjectSpec | NullableSpec | ChoiceSpec | ScalarChoiceSpec
 )
 
 
@@ -119,6 +126,10 @@ def _nullable(item: SchemaSpec) -> NullableSpec:
 
 def _choice(*options: ObjectSpec) -> ChoiceSpec:
     return ChoiceSpec(options)
+
+
+def _scalar_choice(*options: type[str] | type[int]) -> ScalarChoiceSpec:
+    return ScalarChoiceSpec(options)
 
 
 # Exact observed field types from the complete pinned-release semantic audit.
@@ -226,7 +237,7 @@ _NOVEMBER_MEIBOM_PAGE = _obj(
     work=str,
     scan_page=int,
     printed_page=int,
-    book=_nullable(str),
+    book=_nullable(_scalar_choice(str, int)),
     greek_column=str,
     duplicate_scan=bool,
 )
@@ -279,6 +290,14 @@ _NOVEMBER_GUTENBERG: dict[str, SchemaSpec] = {
 
 
 def _decode(value: object, spec: SchemaSpec, *, field: str, context: str) -> FieldValue:
+    if isinstance(spec, ScalarChoiceSpec):
+        if type(value) not in spec.options:
+            raise RecordParseError(
+                f"{context}: {field}: expected str or int source scalar"
+            )
+        if isinstance(value, (str, int)):
+            return value
+        raise AssertionError("unreachable audited scalar type")
     if isinstance(spec, ChoiceSpec):
         if not isinstance(value, dict):
             raise RecordParseError(f"{context}: {field}: expected object variant")
