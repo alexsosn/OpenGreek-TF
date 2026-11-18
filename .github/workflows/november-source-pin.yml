@@ -15,6 +15,8 @@ on:
       - "src/opengreek_tf/jsonl_conservation.py"
       - "tests/test_record_stream.py"
       - "tests/test_november_text_schema.py"
+      - "src/opengreek_tf/native_composer.py"
+      - "tests/test_native_cr_source_facts.py"
   workflow_dispatch:
 
 permissions:
@@ -234,24 +236,106 @@ jobs:
           assert independent.records == 75
           assert independent.original_source_sha256 == report["original_source_sha256"]
 
-          # One actually published separate Gutenberg file contains source CR.
-          # Do not report native output when Text-Fabric cannot preserve U+000D.
-          unsafe = Path("november-cr-unsafe-tf")
-          check = subprocess.run([
-              "opengreek-tf", "convert-texts", str(root),
-              "--release", NOVEMBER_RELEASE.tag,
-              "--file", "data/paratext/gutenberg/32549.jsonl",
-              "--output", str(unsafe),
-          ], capture_output=True, text=True)
-          assert check.returncode != 0
-          assert "carriage return" in check.stderr
-          assert not unsafe.exists()
-
           print("NOVEMBER_SELECTED_REAL_TF=" + json.dumps({
               "status": "PASS", "rows": independent.records,
               "primary": 1, "secondary": 65, "nested_paratext": 9,
               "source_sha256": independent.original_source_sha256,
               "native_sha256": report["canonical_sha256"],
-              "cr_containing_source_file": "REJECTED_LOSSLESSLY",
+              "cr_containing_source_file": "CHECKED_SEPARATELY",
               "full_november_release": False,
+          }, sort_keys=True))
+
+      - name: Genuine November Gutenberg CR in mixed original native TF graph
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+          from tf.fabric import Fabric
+          from opengreek_tf.release import NOVEMBER_RELEASE
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.research_queries import search_native
+
+          root = Path("new-source")
+          cr_file = "data/paratext/gutenberg/32549.jsonl"
+          originals = [
+              json.loads(line) for line in (root / cr_file).read_bytes().splitlines()
+          ]
+          assert len(originals) == 30
+          assert all(
+              set(row) == {"locus", "text", "source", "source_sha256"}
+              and type(row["text"]) is str for row in originals
+          )
+          assert sum(row["text"].count("\r") for row in originals) == 73
+          assert sum("\r" in row["text"] for row in originals) == 25
+          selected = (
+              "data/corpus/abas.fragmenta.jsonl",
+              "data/corpus_secondary/nicomachus-mathematics.excerpta.jsonl",
+              "data/paratext/gutenberg/66595.jsonl",
+              cr_file,
+          )
+          output_dir = Path("genuine-november-cr-mixed-native")
+          cmd = [
+              "opengreek-tf", "convert-texts", str(root),
+              "--release", NOVEMBER_RELEASE.tag,
+          ]
+          for file in selected:
+              cmd.extend(["--file", file])
+          report = json.loads(subprocess.check_output([
+              *cmd, "--output", str(output_dir),
+          ], text=True))
+          assert (report["primary_passages"], report["secondary_witnesses"],
+                  report["paratext_records"]) == (1, 65, 39)
+          assert report["records"] == 105
+          independent = validate_native_jsonl_sources(
+              root, selected, output_dir, identity=NOVEMBER_RELEASE,
+          )
+          assert independent.records == 105
+          assert independent.original_source_sha256 == report["original_source_sha256"]
+          recovered = read_native_records(output_dir)
+          assert len(recovered) == 105
+          assert [row.fields.require("text") for row in recovered[-30:]] == [
+              item["text"] for item in originals
+          ]
+          original_cr = [
+              item for item in originals if "\r" in item["text"]
+          ]
+          native_hits = search_native(
+              output_dir, kind="paratext-record", contains="\r",
+              source_file=cr_file, max_results=100,
+          )
+          assert [(hit.locus, hit.text) for hit in native_hits] == [
+              (row["locus"], row["text"]) for row in original_cr
+          ]
+          cli_lines = subprocess.check_output([
+              "opengreek-tf", "search-native", str(output_dir),
+              "--kind", "paratext-record", "--contains", "\r",
+              "--source-file", cr_file, "--max-results", "100",
+          ], text=True).splitlines()
+          assert [
+              (item["locus"], item["text"]) for item in map(json.loads, cli_lines)
+          ] == [(row["locus"], row["text"]) for row in original_cr]
+          api = Fabric(locations=str(output_dir), silent="deep").load(
+              "fragment_codepoint fragment_kind fragment_position fragment_text "
+              "has_cr_fragment", silent="deep",
+          )
+          assert api
+          assert sum(
+              api.F.fragment_codepoint.v(node) == 13
+              for node in api.F.otype.s("crFragment")
+          ) == 73
+          assert not api.F.otype.s("word")
+          print("NOVEMBER_GENUINE_CR_NATIVE_TF=" + json.dumps({
+              "status": "PASS",
+              "source_release": NOVEMBER_RELEASE.release_id,
+              "original_records": 105,
+              "Gutenberg_32549_records": 30,
+              "CR_codepoint_nodes": 73,
+              "native_F_E_reconstruction": "PASS",
+              "researcher_search_native_and_cli": "PASS",
+              "stock_jsonl_independent_validation": "PASS",
+              "source_sha256": independent.original_source_sha256,
+              "native_sha256": report["canonical_sha256"],
+              "primary_passage_CR_T_text_supported": False,
           }, sort_keys=True))

@@ -95,11 +95,16 @@ opengreek-tf convert-texts upstream/open-greek-november \
 ```
 
 This is a bounded migration proof over complete original files, not November
-`--all`. The new release has additional complex record variants, floating-point
-scan coordinates and 73 CR codepoints in paratext that the native writer
-cannot yet preserve. Unsupported variants and CR fail without success rather
-than being normalized or silently omitted. The November full-corpus source,
-metadata/identity, alias, browser and release gates remain open under #88.
+`--all`. The new release has additional complex record variants and floating-point
+scan coordinates that remain unsupported. Its 73 source CR codepoints in
+paratext can be preserved as ordered native integer-13 Text-Fabric
+`crFragment` nodes attached to the genuine `sourceFact` string, with source-exact
+reconstruction from loaded F/E. The ordinary Text-Fabric `T.text` formatter
+does **not** preserve CR, so source-text CR remains forbidden in primary
+passage slots. This feature is for metadata/paratext facts and does not create
+fake Greek tokens or normalize line endings. Unsupported source variants
+fail closed. Full November coverage, aliases, browser rendering and release
+gates remain open under #88/#29.
 
 Network access belongs to acquisition only. Later conversion commands receive a verified local checkout and must not fetch or repair source data.
 

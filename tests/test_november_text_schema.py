@@ -14,7 +14,7 @@ import pytest
 
 from opengreek_tf.cli import main
 from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
-from opengreek_tf.native_composer import NativeComposeError, read_native_records
+from opengreek_tf.native_composer import read_native_records
 from opengreek_tf.record_stream import (
     FieldObject,
     RecordParseError,
@@ -207,19 +207,31 @@ def test_november_all_mode_remains_blocked_before_writing(
     assert not output.exists()
 
 
-def test_november_native_writer_rejects_actual_cr_instead_of_losing_it(
-    tmp_path: Path,
+def test_november_native_writer_preserves_real_source_cr_in_loaded_F_E(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
     root = tmp_path / "source"
-    _file(root, "data/paratext/gutenberg/32549.jsonl", {
-        "locus": "note.1", "text": "τοῦ\r\nἄλλου",
+    file = "data/paratext/gutenberg/32549.jsonl"
+    original = "τοῦ\r\nἄλλου"
+    _file(root, file, {
+        "locus": "note.1", "text": original,
         "source": "gutenberg", "source_sha256": "a" * 64,
     })
-    output = tmp_path / "unsafe"
+    output = tmp_path / "native"
     snapshot = SourceSnapshot(root.resolve(), NOVEMBER_RELEASE.commit)
     with patch("opengreek_tf.cli.verify_source", return_value=snapshot):
-        with pytest.raises(NativeComposeError, match="carriage return"):
-            main(["convert-texts", str(root), "--release", NOVEMBER_RELEASE.tag,
-                  "--file", "data/paratext/gutenberg/32549.jsonl",
-                  "--output", str(output)])
-    assert not output.exists()
+        assert main([
+            "convert-texts", str(root), "--release", NOVEMBER_RELEASE.tag,
+            "--file", file, "--output", str(output),
+        ]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["records"] == report["paratext_records"] == 1
+    loaded = read_native_records(output)
+    assert len(loaded) == 1
+    assert loaded[0].fields.require("text") == original
+    assert loaded[0].text is None
+    independent = validate_native_jsonl_sources(
+        root, (file,), output, identity=NOVEMBER_RELEASE,
+    )
+    assert independent.records == 1
+    assert independent.original_source_sha256 == report["original_source_sha256"]

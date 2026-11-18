@@ -126,11 +126,20 @@ def _preflight(
         fact_nodes += graph.declared_size
         _update_source_signature(signature, record, graph)
         for node in graph.nodes:
-            if (
-                (node.key is not None and "\r" in node.key)
-                or (isinstance(node.value, str) and "\r" in node.value)
-            ):
-                raise NativeComposeError("carriage return in native fact")
+            if node.key is not None and "\r" in node.key:
+                raise NativeComposeError("carriage return in source fact key")
+            if isinstance(node.value, str) and "\r" in node.value:
+                if record.text is not None:
+                    raise NativeComposeError("carriage return in primary source fact")
+                # TF13 cannot roundtrip literal CR feature strings. Only
+                # metadata source strings may use native ordered integer-13
+                # fragments; passage T.text remains explicitly CR-unsafe.
+                available.update({
+                    "has_cr_fragment", "fragment_kind", "fragment_position",
+                    "fragment_codepoint",
+                })
+                if any(node.value.split("\r")):
+                    available.add("fragment_text")
             if node.key is not None:
                 available.add("fact_key")
             if node.kind == "str":
@@ -246,6 +255,8 @@ def write_native_record_factory(
     ints = {"source_ordinal", "source_seq", "fact_count", "fact_id", "fact_position"}
     if "fact_int" in available:
         ints.add("fact_int")
+    if "has_cr_fragment" in available:
+        ints.update({"fragment_position", "fragment_codepoint"})
 
     def director(cv: CV) -> None:
         replay_signature = hashlib.sha256()
@@ -309,7 +320,8 @@ def write_native_record_factory(
                 if fact.kind == "str":
                     if type(fact.value) is not str:
                         raise NativeComposeError("invalid source string scalar")
-                    values["fact_text"] = fact.value
+                    if "\r" not in fact.value:
+                        values["fact_text"] = fact.value
                 if fact.kind in {"int", "bool"}:
                     if not isinstance(fact.value, (int, bool)):
                         raise NativeComposeError("invalid source numeric scalar")
@@ -322,6 +334,44 @@ def write_native_record_factory(
                     cv.edge(
                         handles[fact.parent_id], handles[fact.node_id], has_fact=None,
                     )
+            if "has_cr_fragment" in available:
+                for fact in graph.nodes:
+                    if (
+                        fact.kind != "str" or not isinstance(fact.value, str)
+                        or "\r" not in fact.value
+                    ):
+                        continue
+                    if textual:
+                        raise NativeComposeError(
+                            "carriage return in replayed primary source fact"
+                        )
+                    # Only observed CR-bearing native sourceFact scalars get
+                    # extra first-class F/E nodes. Old source graphs, text
+                    # slots, Text-Fabric layouts and canonical hashes stay
+                    # byte-for-byte unchanged without CR.
+                    position = 0
+                    parts = fact.value.split("\r")
+                    for index, piece in enumerate(parts):
+                        if piece:
+                            run = cv.node("crFragment", slots=[source_atom[1]])
+                            cv.feature(
+                                run, fragment_kind="run",
+                                fragment_position=position, fragment_text=piece,
+                            )
+                            cv.edge(
+                                handles[fact.node_id], run, has_cr_fragment=None,
+                            )
+                            position += 1
+                        if index < len(parts) - 1:
+                            cr = cv.node("crFragment", slots=[source_atom[1]])
+                            cv.feature(
+                                cr, fragment_kind="cr",
+                                fragment_position=position, fragment_codepoint=13,
+                            )
+                            cv.edge(
+                                handles[fact.node_id], cr, has_cr_fragment=None,
+                            )
+                            position += 1
         if replay_rows != stats.records or replay_signature.hexdigest() != preflight_signature:
             raise NativeComposeError("original source changed between preflight and TF replay")
 
@@ -381,25 +431,38 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
         "source_record_id", "record_kind", "fact_count", "fact_digest",
         "fact_kind", "fact_id", "fact_position", "has_fact",
     }
-    optional = {"fact_key", "fact_text", "fact_int", "form"}
+    fragment_features = {
+        "fragment_kind", "fragment_position",
+        "fragment_text", "fragment_codepoint",
+    }
+    optional = {"fact_key", "fact_text", "fact_int", "form"} | fragment_features
     required_nodes = (mandatory - {"has_fact"}) | {"otype"}
     declared_nodes = set(discovered["nodes"])
     declared_edges = set(discovered["edges"])
     declared_configs = set(discovered["configs"])
     declared = declared_nodes | declared_edges
-    # A selective Fabric.load cannot reveal fabricated features elsewhere on
-    # disk: reject even valid native F/E/config files beyond the writer's
-    # exact published surface, before reconstructing the source facts.
+    has_cr_fragments = "has_cr_fragment" in declared_edges
+    expected_edges = {"oslots", "has_fact"}
+    if has_cr_fragments:
+        expected_edges.add("has_cr_fragment")
+    # The only optional graph extension is an actual first-class CR fragment
+    # relation and its strictly typed native features. The old graph surface
+    # must be IDENTICAL when no original source string contains CR.
     if (
         not required_nodes.issubset(declared_nodes)
         or declared_nodes - required_nodes - optional
-        or declared_edges != {"oslots", "has_fact"}
+        or declared_edges != expected_edges
         or declared_configs != {"otext"}
+        or (has_cr_fragments and not {
+            "fragment_kind", "fragment_position", "fragment_codepoint",
+        }.issubset(declared_nodes))
+        or (not has_cr_fragments and bool(fragment_features & declared_nodes))
     ):
         raise NativeComposeError("unexpected or missing native TF feature")
-    api = fabric.load(
-        " ".join(sorted(mandatory | (optional & declared))), silent="deep",
-    )
+    features = mandatory | (optional & declared)
+    if has_cr_fragments:
+        features.add("has_cr_fragment")
+    api = fabric.load(" ".join(sorted(features)), silent="deep")
     if not api:
         raise NativeComposeError("cannot load native typed source graph")
     # Native otype groups nodes by kind, not physical source order. Sorting
@@ -441,16 +504,24 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
         raise NativeComposeError("unexpected native otext rendering configuration")
     fact_handles = set(api.F.otype.s("sourceFact"))
     atom_handles = set(api.F.otype.s("atom"))
+    fragment_handles = (
+        set(api.F.otype.s("crFragment")) if has_cr_fragments else set()
+    )
+    if has_cr_fragments and not fragment_handles:
+        raise NativeComposeError("native CR relation has no original fragments")
     if not roots:
         raise NativeComposeError("missing source records")
     if api.F.otype.s("word") or (destination / "word.tf").exists():
         raise NativeComposeError("native composer invented word-level content")
     # TF's F.otype.all reports node-type labels (big to small), not node IDs.
     allowed = {"atom", "passage", "metadataRecord", "sourceFact"}
+    if has_cr_fragments:
+        allowed.add("crFragment")
     if set(api.F.otype.all) - allowed:
         raise NativeComposeError("unexpected Text-Fabric node type")
     used_atoms: set[int] = set()
     used_facts: set[int] = set()
+    used_fragments: set[int] = set()
     used_ids: set[tuple[str, int]] = set()
     for expected_seq, root in enumerate(roots, 1):
         is_text = api.F.otype.v(root) == "passage"
@@ -515,18 +586,93 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
                 raise NativeComposeError("invalid local source fact identity/type")
             text = api.F.fact_text.v(handle) if "fact_text" in declared else None
             number = api.F.fact_int.v(handle) if "fact_int" in declared else None
+            fragments = (
+                tuple(api.E.has_cr_fragment.f(handle)) if has_cr_fragments else ()
+            )
+            value: str | int | bool | None
             if kind == "str":
-                if type(text) is not str or number is not None:
+                if number is not None:
                     raise NativeComposeError("bad source string scalar")
-                value: str | int | bool | None = text
+                if fragments:
+                    if text is not None or is_text:
+                        raise NativeComposeError(
+                            "CR source fragment cannot alter primary text"
+                        )
+                    by_position: dict[int, tuple[str, str | int]] = {}
+                    for fragment in fragments:
+                        if (
+                            fragment not in fragment_handles
+                            or fragment in used_fragments
+                            or tuple(api.E.oslots.s(fragment)) != (anchor,)
+                        ):
+                            raise NativeComposeError(
+                                "duplicate, orphaned or cross-source CR fragment"
+                            )
+                        used_fragments.add(fragment)
+                        index = api.F.fragment_position.v(fragment)
+                        kind_fragment = api.F.fragment_kind.v(fragment)
+                        part = (
+                            api.F.fragment_text.v(fragment)
+                            if "fragment_text" in declared else None
+                        )
+                        codepoint = api.F.fragment_codepoint.v(fragment)
+                        if (
+                            type(index) is not int or index < 0
+                            or index in by_position
+                        ):
+                            raise NativeComposeError("invalid CR fragment position")
+                        if kind_fragment == "run":
+                            if (
+                                type(part) is not str or not part
+                                or "\r" in part or codepoint is not None
+                            ):
+                                raise NativeComposeError("bad literal CR fragment run")
+                            by_position[index] = ("run", part)
+                        elif kind_fragment == "cr":
+                            if (
+                                type(codepoint) is not int or codepoint != 13
+                                or part is not None
+                            ):
+                                raise NativeComposeError("lost integer-13 CR fragment")
+                            by_position[index] = ("cr", 13)
+                        else:
+                            raise NativeComposeError("unknown native CR fragment kind")
+                    if sorted(by_position) != list(range(len(by_position))):
+                        raise NativeComposeError("noncontiguous CR fragment order")
+                    observed_parts = [
+                        by_position[index] for index in range(len(by_position))
+                    ]
+                    restored = "".join(
+                        part if isinstance(part, str) else "\r"
+                        for _, part in observed_parts
+                    )
+                    # Canonical one-run-between-CR atomization: this catches
+                    # redundant fragments even when their concatenation and
+                    # the original fact digest appear superficially valid.
+                    canonical: list[tuple[str, str | int]] = []
+                    source_parts = restored.split("\r")
+                    for index, part in enumerate(source_parts):
+                        if part:
+                            canonical.append(("run", part))
+                        if index < len(source_parts) - 1:
+                            canonical.append(("cr", 13))
+                    if "\r" not in restored or canonical != observed_parts:
+                        raise NativeComposeError(
+                            "uncanonical or forged source CR fragment graph"
+                        )
+                    value = restored
+                else:
+                    if type(text) is not str or "\r" in text:
+                        raise NativeComposeError("bad original source string scalar")
+                    value = text
             elif kind in {"int", "bool"}:
-                if type(number) is not int or text is not None:
+                if fragments or type(number) is not int or text is not None:
                     raise NativeComposeError("bad source numeric scalar")
                 if kind == "bool" and number not in (0, 1):
                     raise NativeComposeError("invalid native boolean value")
                 value = bool(number) if kind == "bool" else number
             else:
-                if text is not None or number is not None:
+                if fragments or text is not None or number is not None:
                     raise NativeComposeError("container/null acquired scalar payload")
                 value = None
             observed[local_id] = FactNode(
@@ -587,8 +733,12 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
             filename, ordinal, record_id, record_kind, fields, source_text,
         )
 
-    if used_atoms != atom_handles or used_facts != fact_handles:
-        raise NativeComposeError("unaccounted native TF source or fact nodes")
+    if (
+        used_atoms != atom_handles
+        or used_facts != fact_handles
+        or used_fragments != fragment_handles
+    ):
+        raise NativeComposeError("unaccounted native TF source or fact/CR fragment nodes")
 
     # A graph may preserve every authentic fact while attaching fabricated
     # values under ALREADY KNOWN feature names. Check the complete loaded F/E
@@ -615,6 +765,10 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
         "fact_key": fact_handles,
         "fact_text": fact_handles,
         "fact_int": fact_handles,
+        "fragment_kind": fragment_handles,
+        "fragment_position": fragment_handles,
+        "fragment_text": fragment_handles,
+        "fragment_codepoint": fragment_handles,
     }
     for name, allowed_nodes in permitted_placements.items():
         if name in declared_nodes:
@@ -628,6 +782,13 @@ def iter_native_records(destination: Path) -> Iterator[NativeRecord]:
             raise NativeComposeError("unexpected native source-fact edge origin")
         if any(target not in fact_handles for target in targets):
             raise NativeComposeError("unexpected native source-fact edge target")
+
+    if has_cr_fragments:
+        for origin, targets in api.E.has_cr_fragment.items():
+            if origin not in fact_handles or any(
+                target not in fragment_handles for target in targets
+            ):
+                raise NativeComposeError("invalid native CR fragment relation")
 
     # Contiguous global order is established while yielding, including
     # duplicate/missing/noninteger source_seq. All global checks ran above.
