@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from typing import Literal, Protocol, TypeAlias
 
 from .record_stream import FieldArray, FieldObject, FieldValue
 
-FactKind: TypeAlias = Literal["object", "array", "str", "int", "bool", "null"]
+FactKind: TypeAlias = Literal["object", "array", "str", "int", "float", "bool", "null"]
 
 
 class FactSource(Protocol):
@@ -38,7 +39,7 @@ class FactNode:
     position: int
     key: str | None
     kind: FactKind
-    value: str | int | bool | None = None
+    value: str | int | float | bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +85,7 @@ def build_fact_graph(record: FactSource) -> FactGraph:
     ) -> int:
         if isinstance(value, FieldObject):
             kind: FactKind = "object"
-            scalar: str | int | bool | None = None
+            scalar: str | int | float | bool | None = None
         elif isinstance(value, FieldArray):
             kind = "array"
             scalar = None
@@ -96,6 +97,11 @@ def build_fact_graph(record: FactSource) -> FactGraph:
             scalar = value
         elif type(value) is int:
             kind = "int"
+            scalar = value
+        elif type(value) is float:
+            if not math.isfinite(value):
+                raise FactGraphError("nonfinite source float is unrepresentable")
+            kind = "float"
             scalar = value
         elif type(value) is str:
             kind = "str"
@@ -171,11 +177,15 @@ def restore_fact_fields(graph: FactGraph) -> FieldObject:
             raise FactGraphError("expected exact string scalar")
         elif node.kind == "int" and type(node.value) is not int:
             raise FactGraphError("expected exact integer scalar")
+        elif node.kind == "float" and (
+            type(node.value) is not float or not math.isfinite(node.value)
+        ):
+            raise FactGraphError("expected exact finite float scalar")
         elif node.kind == "bool" and type(node.value) is not bool:
             raise FactGraphError("expected exact boolean scalar")
         elif node.kind == "null" and node.value is not None:
             raise FactGraphError("null source fact must have no scalar value")
-        elif node.kind not in {"str", "int", "bool", "null", "object", "array"}:
+        elif node.kind not in {"str", "int", "float", "bool", "null", "object", "array"}:
             raise FactGraphError("unknown source fact kind")
         if node.parent_id is not None:
             children.setdefault(node.parent_id, []).append(node)
@@ -189,7 +199,7 @@ def restore_fact_fields(graph: FactGraph) -> FieldObject:
             if node.kind == "null":
                 return None
             value = node.value
-            if not isinstance(value, (str, int, bool)):
+            if not isinstance(value, (str, int, float, bool)):
                 raise FactGraphError("scalar source fact has invalid type")
             return value
         if [child.position for child in successors] != list(range(len(successors))):
