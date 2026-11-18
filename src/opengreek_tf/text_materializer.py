@@ -13,6 +13,7 @@ from pathlib import Path
 from .native_composer import NativeRecord, NativeStats, write_native_record_factory
 from .primary_materializer import iter_native_primary
 from .record_stream import DIR_FAMILY
+from .release import NOVEMBER_RELEASE, SUPPORTED_RELEASE, ReleaseIdentity
 from .unaligned_materializer import iter_native_unaligned
 
 _FAMILY_DIRECTORIES = ("corpus", "corpus_secondary", "paratext")
@@ -32,6 +33,7 @@ class TextInventory:
 def _validate_files(
     root: Path, relative_files: tuple[str, ...], *,
     allow_empty_files: frozenset[str] = frozenset(),
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
 ) -> None:
     if not relative_files:
         raise ValueError("no original textual JSONL files selected")
@@ -45,12 +47,19 @@ def _validate_files(
         if type(name) is not str:
             raise ValueError("source filename must be a string")
         path = Path(name)
+        standard = len(path.parts) == 3
+        november_gutenberg = (
+            identity.tag == NOVEMBER_RELEASE.tag
+            and len(path.parts) == 4
+            and path.parts[1:3] == ("paratext", "gutenberg")
+        )
         if (
             path.is_absolute()
             or path.as_posix() != name
-            or len(path.parts) != 3
+            or not (standard or november_gutenberg)
             or path.parts[0] != "data"
             or path.parts[1] not in DIR_FAMILY
+            or any(part in {".", ".."} for part in path.parts)
             or path.suffix != ".jsonl"
         ):
             raise ValueError(f"noncanonical textual source path: {name!r}")
@@ -122,21 +131,25 @@ def select_all_text_files(
 def iter_native_texts(
     root: Path, relative_files: tuple[str, ...], *,
     allow_empty_files: frozenset[str] = frozenset(),
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
 ) -> Iterator[NativeRecord]:
     """Keep original file/row order; no witness/paratext lexical alignment."""
-    _validate_files(root, relative_files, allow_empty_files=allow_empty_files)
+    _validate_files(
+        root, relative_files, allow_empty_files=allow_empty_files, identity=identity,
+    )
     for relative in relative_files:
         directory = Path(relative).parts[1]
         if directory == "corpus":
-            yield from iter_native_primary(root, (relative,))
+            yield from iter_native_primary(root, (relative,), identity=identity)
         else:
-            yield from iter_native_unaligned(root, (relative,))
+            yield from iter_native_unaligned(root, (relative,), identity=identity)
 
 
 def materialize_texts(
     root: Path, relative_files: tuple[str, ...], destination: Path, *,
     allow_empty_files: frozenset[str] = frozenset(),
     slot_layout: str = "runs",
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
 ) -> NativeStats:
     """Write selected original text families into ONE genuine native TF graph.
 
@@ -151,6 +164,7 @@ def materialize_texts(
     return write_native_record_factory(
         lambda: iter_native_texts(
             root, relative_files, allow_empty_files=allow_empty_files,
+            identity=identity,
         ),
         destination, slot_layout=slot_layout,
     )
