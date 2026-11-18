@@ -18,6 +18,21 @@ The November `data/corpus_release.json` **does not have** the old independent `p
 
 This opt-in phase does not silently change `SUPPORTED_RELEASE` or the existing converter's original-source inventory, native TF golden hashes and research semantics. Full conversion still uses September and refuses a November checkout until the source schema, counts, aliases, original-text conservation, and app behaviour have been separately migrated.
 
+## Actual immutable old-vs-new Git tree census (pre-conversion)
+
+I compared complete Git blob inventories from the **two exact publishing commits**, using GitHub's recursively listed Git trees (both returned `truncated=false`). This establishes filename membership and byte-level Git blob changes, **not** per-record content semantics or corpus conservation:
+
+| Original textual family | September files | November files | Added files | Removed files | Existing files with changed Git blob |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `data/corpus/*.jsonl` | 3,909 | 3,939 | 38 | 8 | 1,224 |
+| `data/corpus_secondary/*.jsonl` | 533 | 560 | 32 | 5 | 0 |
+| `data/paratext/**/*.jsonl` (including subdirectories) | 5 | 17 | 12 | 0 | 0 |
+| **All three textual families** | **4,447** | **4,516** | **82** | **13** | **1,224** |
+
+The `data/paratext/` Git prefix includes a README, which changed but is excluded from the JSONL counts. **Three** of the twelve new paratext JSONL are nested at `data/paratext/gutenberg/{32549,37641,66595}.jsonl`. The current strict source parser requires exactly three path components, while `select_all_text_files` uses a top-level-only `glob("*.jsonl")`, so it would **omit these real source files** and reject direct selection. Other new file kinds/fields may require further audited schema changes. The existing `_EXPECTED_FILES=(3909,533,5)` and `_PINNED_ALL_TEXT_ROWS` cannot be reused for the November release.
+
+The new release's **3939 work manifest count is not a physical passage record count**. No complete November textual row census or graph build has yet been proved. Every new file and changed blob must be classified by actual source records before treating the new snapshot as ready for materialization.
+
 ## Opt-in researcher/developer commands
 
 ```bash
