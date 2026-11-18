@@ -217,7 +217,7 @@ _NOVEMBER_MEIBOM_PAGE = _obj(
     greek_column=str,
     duplicate_scan=bool,
 )
-_NOVEMBER_GUTENBERG = {
+_NOVEMBER_GUTENBERG: dict[str, SchemaSpec] = {
     "locus": str, "source": str, "source_sha256": str, "text": str,
 }
 
