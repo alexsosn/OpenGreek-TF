@@ -22,7 +22,10 @@ from opengreek_tf.tf_integrity import native_tf_manifest
 
 DUBNER = "data/corpus_secondary/scholia-in-aristophanem.triclinius-meters-dubner-1855.jsonl"
 PIN = "data/corpus_secondary/vitae-pindari-et-varia-de-pindaro.vita-metrica.jsonl"
-CYRIL = "data/corpus_secondary/cyrillus-theology.commentarii-in-joannem.reviewed-duplicate-witnesses.jsonl"
+CYRIL = (
+    "data/corpus_secondary/"
+    "cyrillus-theology.commentarii-in-joannem.reviewed-duplicate-witnesses.jsonl"
+)
 HESYCHIUS = "data/corpus_secondary/hesychius-lexicography.lexicon-o.missing-columns-witnesses.jsonl"
 
 BASE = {
@@ -41,7 +44,10 @@ TARGET = {
 DUBNER_ROW = {
     **BASE,
     "original_locus": "scholia_aristoph_dubner_0040.2",
-    "original_work": "scholia-in-aristophanem.scholia-in-acharnenses-scholia-vetera-et-recentiora-triclinii",
+    "original_work": (
+        "scholia-in-aristophanem."
+        "scholia-in-acharnenses-scholia-vetera-et-recentiora-triclinii"
+    ),
     "original_edition": "qwen36-scholia_aristoph_dubner-masked",
     "source_char_range": [0, 1338],
     "source_role": "historical-prolegomena",
@@ -100,7 +106,10 @@ HESYCHIUS_ROW = {
         "crop_size": [495, 1149],
         "id": "harvard:259",
         "max_side": 1600,
-        "path": "data/corpus_changes/hesychius-missing-columns/source-evidence/harvard-column-259.png",
+        "path": (
+            "data/corpus_changes/hesychius-missing-columns/source-evidence/"
+            "harvard-column-259.png"
+        ),
         "pixel_box": [185, 215, 680, 1364],
         "printed_column": 259,
         "region": [0.14, 0.11, 0.515, 0.698],
