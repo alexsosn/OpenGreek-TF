@@ -52,6 +52,46 @@ New semantic fields are substantial: **15,834** primary `analysis_segments/analy
 
 The first **selected-file** compatibility slice reuses the generic typed source fact graph and writer for the six-key Meibom `source_page` with explicit JSON null/boolean and the complete original Gutenberg `locus/source/source_sha256/text` records in `data/paratext/gutenberg/`. The original September reader remains strict. Version-specific unsupported November fields, cropped-image source page floats and complex token/editorial structures **fail closed**, rather than being flattened or ignored. The source-observed Gutenberg CR variant is supported via native metadata source-fact codepoint fragments only, with a genuine installed-CLI all-30-row Gutenberg 32549 plus mixed-primary/witness/paratext smoke (105 original records, 73 CR across 25 affected rows). The real-source acceptance test selects one complete primary source file, a complete 65-row Nicomachus witness and a complete 9-row nested Gutenberg file, then independently compares the loaded native TF source facts to stock original JSONL.
 
+## Complete November secondary-witness source grammar (#88, PR #95)
+
+The immutable November source includes **560 original secondary JSONL files**
+and **338,245 physical source records**, including one truly empty file
+(data/corpus_secondary/democritus.fragmenta.jsonl). All records must parse
+strictly with original source file/physical ordinal, without fictitious
+alignment or promotion of former primary readings.
+
+Source-authoritative groups, counted across the complete pinned census:
+
+| Original secondary fact group | Rows |
+| --- | ---: |
+| Ranked secondary entries (rank, secondary_reason) | 306,534 |
+| Dubner 1855 source scope and character ranges | 27,913 |
+| Meibom six-member scan source_page/evidence | 4,235 |
+| Reviewed duplicate witness with current_target | 119 |
+| Pindar former primary with original_row/canonical_target | 6 |
+| Hesychius cropped source page with float region | 8 |
+
+Some rows belong to multiple groups. Numbers cannot be summed as if
+they partitioned the source.
+
+The actual original Hesychius crop region has four JSON floats
+[0.14, 0.11, 0.515, 0.698]. Text-Fabric feature values do not
+provide native float storage: the ordered native sourceFact graph
+retains the source scalar as a fact_kind=float node and a corresponding
+fact_float feature containing its exact reversible float.hex() value.
+The independent loaded-Fabric verifier refuses a noncanonical,
+nonfinite or incorrectly typed float. Original key order, array order,
+explicit null, boolean and source path/ordinal remain unchanged. No
+new feature is written for CR-/float-free sources, keeping September
+canonical TF output stable.
+
+The pinned November CI now must stream-parse **all 338,245 original
+secondary rows** and independently conserve selected *whole genuine*
+source files from the Dubner, Pindar, reviewed Cyril and cropped
+Hesychius groups together in one installed-CLI native TF graph.
+This does not claim that all 338,245 rows have yet been built into
+one TF graph or that the full November release is supported.
+
 ## Opt-in researcher/developer commands
 
 ```bash
