@@ -154,6 +154,58 @@ def test_all_november_secondary_editorial_variants_have_source_facts(
         list(parse_file(tmp_path, name))
 
 
+@pytest.mark.parametrize("book", [1, "I", None])
+def test_meibom_source_page_book_preserves_integer_string_or_null(
+    tmp_path: Path, book: object,
+) -> None:
+    record: dict[str, object] = {
+        **BASE,
+        "source_page": {
+            "work": "aristides-quintilianus-music.de-musica",
+            "scan_page": 525, "printed_page": 1,
+            "book": book, "greek_column": "left",
+            "duplicate_scan": False,
+        },
+        "evidence": "data/source_layouts/meibom-1652.json",
+    }
+    source_file = "data/corpus_secondary/aristides-quintilianus-music.de-musica.jsonl"
+    _record(tmp_path, source_file, record)
+    parsed = next(parse_file(tmp_path, source_file, identity=NOVEMBER_RELEASE))
+    page = parsed.fields.require("source_page")
+    assert isinstance(page, FieldObject)
+    assert type(page.require("book")) is type(book)
+    assert page.require("book") == book
+    output = tmp_path / "native"
+    materialize_texts(tmp_path, (source_file,), output, identity=NOVEMBER_RELEASE)
+    loaded_page = read_native_records(output)[0].fields.require("source_page")
+    assert isinstance(loaded_page, FieldObject)
+    assert type(loaded_page.require("book")) is type(book)
+    report = validate_native_jsonl_sources(
+        tmp_path, (source_file,), output, identity=NOVEMBER_RELEASE,
+    )
+    assert report.records == 1
+
+
+@pytest.mark.parametrize("book", [True, 1.0, ["1"]])
+def test_meibom_book_rejects_bool_float_and_arrays(
+    tmp_path: Path, book: object,
+) -> None:
+    record: dict[str, object] = {
+        **BASE,
+        "source_page": {
+            "work": "aristides-quintilianus-music.de-musica",
+            "scan_page": 525, "printed_page": 1,
+            "book": book, "greek_column": "left",
+            "duplicate_scan": False,
+        },
+        "evidence": "data/source_layouts/meibom-1652.json",
+    }
+    source_file = "data/corpus_secondary/aristides-quintilianus-music.de-musica.jsonl"
+    _record(tmp_path, source_file, record)
+    with pytest.raises(RecordParseError, match="source_page.book"):
+        list(parse_file(tmp_path, source_file, identity=NOVEMBER_RELEASE))
+
+
 def test_float_image_crop_region_keeps_exact_runtime_type(
     tmp_path: Path,
 ) -> None:
