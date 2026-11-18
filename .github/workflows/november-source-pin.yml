@@ -1,0 +1,102 @@
+name: Pinned November 2026 Open Greek source identity
+
+on:
+  pull_request:
+    paths:
+      - "src/opengreek_tf/release.py"
+      - "src/opengreek_tf/source.py"
+      - "src/opengreek_tf/cli.py"
+      - "tests/test_new_release_manifest.py"
+      - ".github/workflows/november-source-pin.yml"
+      - "docs/research/november-source-migration.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  immutable-november-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CLI
+        run: python -m pip install -e .
+      - name: Acquire exact November publishing commit (not annotated tag object)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init --quiet new-source
+          git -C new-source remote add origin https://github.com/open-greek/open-greek-corpus.git
+          git -C new-source sparse-checkout init --no-cone
+          printf '%s\n' \
+            '/data/corpus_release.json' \
+            '/data/public_export.json' \
+            '/data/corpus_changes/dioscorides-pedanius.de-materia-medica.printed-divisions.json' \
+            > new-source/.git/info/sparse-checkout
+          git -C new-source fetch --depth 1 --filter=blob:none origin \
+            122f2cba907dbac0af63f75cf1a54fa3309f36ba
+          git -C new-source checkout --detach --force FETCH_HEAD
+          test "$(git -C new-source rev-parse HEAD)" = \
+            122f2cba907dbac0af63f75cf1a54fa3309f36ba
+      - name: Verify release manifest, independent export and Dioscorides evidence
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+          from opengreek_tf.release import NOVEMBER_RELEASE, SUPPORTED_RELEASE
+          from opengreek_tf.source import SourceAcquisitionError, verify_source
+
+          root = Path("new-source")
+          verified = verify_source(root, identity=NOVEMBER_RELEASE)
+          assert verified.revision == NOVEMBER_RELEASE.commit
+          try:
+              verify_source(root, identity=SUPPORTED_RELEASE)
+          except SourceAcquisitionError:
+              pass
+          else:
+              raise AssertionError("September source verifier accepted November release")
+
+          manifest = json.loads((root / "data/corpus_release.json").read_text(
+              encoding="utf-8"))
+          export = json.loads((root / "data/public_export.json").read_text(
+              encoding="utf-8"))
+          assert manifest["pin"]["manifest"] == "data/public_export.json"
+          assert export["corpus_sha256"] == manifest["pin"]["corpus_sha256"]
+          assert export["release_id"] == NOVEMBER_RELEASE.release_id
+          assert len(export["files"]) == NOVEMBER_RELEASE.works
+          assert manifest["corpus"]["passages"] == NOVEMBER_RELEASE.passages
+
+          change = json.loads((root / "data/corpus_changes/dioscorides-pedanius.de-materia-medica.printed-divisions.json").read_text(
+              encoding="utf-8"))
+          assert change["source_urn"] == "dioscorides-pedanius.de-materia-medica"
+          assert len(change["locus_map"]) == 6
+          assert len(change["withdrawn"]) == 5
+          assert set(change["locus_map"]).isdisjoint(change["withdrawn"])
+          assert all(key and dest.startswith(change["source_urn"] + ":")
+                     for key, dest in change["locus_map"].items())
+          stdout = subprocess.check_output([
+              "opengreek-tf", "verify-source", str(root), "--release",
+              "corpus-2026-11-17",
+          ], text=True)
+          assert json.loads(stdout)["revision"] == NOVEMBER_RELEASE.commit
+          print(json.dumps({
+              "source_identity": "PASS",
+              "revision": verified.revision,
+              "release_id": NOVEMBER_RELEASE.release_id,
+              "release_manifest_schema": "public-export",
+              "works": NOVEMBER_RELEASE.works,
+              "passages": NOVEMBER_RELEASE.passages,
+              "corpus_sha256": export["corpus_sha256"],
+              "dioscorides_locus_redirects": len(change["locus_map"]),
+              "dioscorides_withdrawn": len(change["withdrawn"]),
+              "native_tf_migration_complete": False,
+          }, sort_keys=True))

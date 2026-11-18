@@ -122,40 +122,80 @@ def _verify_release_manifest(path: Path, identity: ReleaseIdentity) -> None:
             f"invalid release manifest root: expected object in {manifest_path}"
         )
 
-    checks: tuple[tuple[str, Any, Any], ...] = (
+    checks: list[tuple[str, Any, Any]] = [
         ("release id", payload.get("release_id"), identity.release_id),
         (
             "corpus hash",
             _nested(payload, "pin", "corpus_sha256"),
             identity.corpus_sha256,
         ),
-        (
-            "catalog hash",
-            _nested(payload, "pin", "catalog_sha256"),
-            identity.catalog_sha256,
-        ),
         ("work count", _nested(payload, "corpus", "works"), identity.works),
-        (
-            "passage count",
-            _nested(payload, "corpus", "passages"),
-            identity.passages,
-        ),
-        (
-            "token count",
-            _nested(payload, "corpus", "tokens"),
-            identity.greek_tokens,
-        ),
-        (
-            "generated-from",
-            _nested(payload, "generated_from", "commit"),
-            identity.generated_from_commit,
-        ),
-    )
+        ("passage count", _nested(payload, "corpus", "passages"), identity.passages),
+        ("token count", _nested(payload, "corpus", "tokens"), identity.greek_tokens),
+    ]
+    if identity.manifest_path is None:
+        # The September pin uses a separate catalog hash and generated-from
+        # provenance. They remain MANDATORY in the legacy schema.
+        if identity.catalog_sha256 is None or identity.generated_from_commit is None:
+            raise SourceAcquisitionError("legacy release identity lacks manifest hashes")
+        checks.extend([
+            (
+                "catalog hash",
+                _nested(payload, "pin", "catalog_sha256"),
+                identity.catalog_sha256,
+            ),
+            (
+                "generated-from",
+                _nested(payload, "generated_from", "commit"),
+                identity.generated_from_commit,
+            ),
+        ])
+    else:
+        # The November release switched to a separately tracked public export
+        # manifest. Never accept a supplied arbitrary path or silently relax
+        # the old September manifest schema when this field is absent.
+        if (
+            identity.manifest_path != "data/public_export.json"
+            or identity.release_date is None
+            or identity.catalog_sha256 is not None
+            or identity.generated_from_commit is not None
+        ):
+            raise SourceAcquisitionError("unsupported public export manifest identity")
+        checks.extend([
+            (
+                "manifest path",
+                _nested(payload, "pin", "manifest"),
+                identity.manifest_path,
+            ),
+            ("release date", payload.get("release_date"), identity.release_date),
+        ])
+
     for label, actual, expected in checks:
-        if actual != expected:
+        # Python's True == 1 must never make a forged integer census pass.
+        if type(actual) is not type(expected) or actual != expected:
             raise SourceAcquisitionError(
                 f"release manifest {label} mismatch: expected {expected!r}, "
                 f"found {actual!r}"
+            )
+
+    if identity.manifest_path is not None:
+        public_export_path = path / identity.manifest_path
+        if public_export_path.is_symlink() or not public_export_path.is_file():
+            raise SourceAcquisitionError(
+                f"release public export manifest is missing: {public_export_path}"
+            )
+        try:
+            public_export = json.loads(public_export_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise SourceAcquisitionError(
+                f"invalid release public export manifest: {public_export_path}"
+            ) from exc
+        if (
+            not isinstance(public_export, dict)
+            or public_export.get("corpus_sha256") != identity.corpus_sha256
+        ):
+            raise SourceAcquisitionError(
+                "release public export manifest corpus hash mismatch"
             )
 
 

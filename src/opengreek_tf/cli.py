@@ -12,7 +12,7 @@ from . import __version__
 from .audit import audit_source
 from .jsonl_conservation import validate_native_jsonl_sources
 from .primary_materializer import materialize_primary
-from .release import SUPPORTED_RELEASE
+from .release import NOVEMBER_RELEASE, SUPPORTED_RELEASE, ReleaseIdentity, release_by_tag
 from .research_queries import search_native
 from .source import fetch_source, verify_source
 from .text_materializer import materialize_texts, select_all_text_files
@@ -30,19 +30,34 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser(
+    source_info = subparsers.add_parser(
         "source-info",
-        help="Print the immutable default Open Greek release identity",
+        help="Print an immutable Open Greek release identity",
+    )
+    source_info.add_argument(
+        "--release", choices=(SUPPORTED_RELEASE.tag, NOVEMBER_RELEASE.tag),
+        default=SUPPORTED_RELEASE.tag,
+        help="Explicit source snapshot (the old converter remains September-pinned)",
     )
 
     fetch = subparsers.add_parser("fetch", help="Fetch the supported Open Greek release")
     fetch.add_argument("destination", help="Empty/nonexistent destination directory")
+    fetch.add_argument(
+        "--release", choices=(SUPPORTED_RELEASE.tag, NOVEMBER_RELEASE.tag),
+        default=SUPPORTED_RELEASE.tag,
+        help="Explicit immutable source snapshot",
+    )
 
     verify = subparsers.add_parser(
         "verify-source",
         help="Verify a clean local checkout of the supported Open Greek release",
     )
     verify.add_argument("source", help="Local Open Greek Git checkout")
+    verify.add_argument(
+        "--release", choices=(SUPPORTED_RELEASE.tag, NOVEMBER_RELEASE.tag),
+        default=SUPPORTED_RELEASE.tag,
+        help="Explicit immutable source snapshot",
+    )
 
     audit = subparsers.add_parser(
         "audit-source",
@@ -114,9 +129,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _source_info() -> dict[str, object]:
-    identity = SUPPORTED_RELEASE
-    return {
+def _source_info(identity: ReleaseIdentity = SUPPORTED_RELEASE) -> dict[str, object]:
+    info: dict[str, object] = {
         "repository": identity.repository,
         "tag": identity.tag,
         "revision": identity.commit,
@@ -127,17 +141,22 @@ def _source_info() -> dict[str, object]:
         "passages": identity.passages,
         "greek_tokens": identity.greek_tokens,
     }
+    if identity.manifest_path is not None:
+        info["manifest_path"] = identity.manifest_path
+    if identity.release_date is not None:
+        info["release_date"] = identity.release_date
+    return info
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.command == "source-info":
-        print(json.dumps(_source_info(), sort_keys=True))
+        print(json.dumps(_source_info(release_by_tag(args.release)), sort_keys=True))
         return 0
 
     if args.command == "fetch":
-        snapshot = fetch_source(args.destination, identity=SUPPORTED_RELEASE)
+        snapshot = fetch_source(args.destination, identity=release_by_tag(args.release))
         print(
             json.dumps(
                 {"path": str(snapshot.path), "revision": snapshot.revision},
@@ -147,7 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "verify-source":
-        snapshot = verify_source(args.source, identity=SUPPORTED_RELEASE)
+        snapshot = verify_source(args.source, identity=release_by_tag(args.release))
         print(
             json.dumps(
                 {"path": str(snapshot.path), "revision": snapshot.revision},
