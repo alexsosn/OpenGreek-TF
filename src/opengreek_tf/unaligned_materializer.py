@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .native_composer import NativeRecord, NativeStats, write_native_records
 from .record_stream import parse_file
+from .release import NOVEMBER_RELEASE, SUPPORTED_RELEASE, ReleaseIdentity
 
 _SOURCE_KINDS = {
     "corpus_secondary": ("secondary", "secondary-witness"),
@@ -19,7 +20,10 @@ _SOURCE_KINDS = {
 }
 
 
-def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
+def _check_files(
+    root: Path, relative_files: tuple[str, ...], *,
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
+) -> None:
     """Prevalidate source file identities, forbidding duplicates or escapes."""
     if not relative_files:
         raise ValueError("no secondary or paratext source files selected")
@@ -32,12 +36,19 @@ def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
         if type(relative) is not str:
             raise ValueError("unaligned source file must have a string path")
         path = Path(relative)
+        standard = len(path.parts) == 3
+        november_gutenberg = (
+            identity.tag == NOVEMBER_RELEASE.tag
+            and len(path.parts) == 4
+            and path.parts[1:3] == ("paratext", "gutenberg")
+        )
         if (
             path.is_absolute()
             or path.as_posix() != relative
-            or len(path.parts) != 3
+            or not (standard or november_gutenberg)
             or path.parts[0] != "data"
             or path.parts[1] not in _SOURCE_KINDS
+            or any(part in {".", ".."} for part in path.parts)
             or path.suffix != ".jsonl"
         ):
             raise ValueError(f"unsupported canonical unaligned source path: {relative!r}")
@@ -60,7 +71,8 @@ def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
 
 
 def iter_native_unaligned(
-    root: Path, relative_files: tuple[str, ...],
+    root: Path, relative_files: tuple[str, ...], *,
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
 ) -> Iterator[NativeRecord]:
     """Read real witness/paratext records without asserting an alignment.
 
@@ -68,10 +80,10 @@ def iter_native_unaligned(
     Original "text" is an ordinary native string source fact: these are
     nonprimary metadata records with no Text-Fabric text-layout slots.
     """
-    _check_files(root, relative_files)
+    _check_files(root, relative_files, identity=identity)
     for relative in relative_files:
         family, record_kind = _SOURCE_KINDS[Path(relative).parts[1]]
-        for row in parse_file(root, relative):
+        for row in parse_file(root, relative, identity=identity):
             if row.family != family:
                 raise ValueError(f"unexpected source family for {relative}")
             yield NativeRecord(
