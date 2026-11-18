@@ -18,6 +18,15 @@ Initial supported upstream release:
 
 The upstream default branch is not a build identity.
 
+**New upstream source candidate (not yet the conversion default):** the official
+`corpus-2026-11-17` snapshot has 3,939 works, 1,913,683 passages, and
+65,271,607 eligible Greek tokens. Its immutable peeled publishing commit is
+`122f2cba907dbac0af63f75cf1a54fa3309f36ba`. Its changed source
+manifest format is verified via an explicit opt-in release selector. Conversion
+and native TF golden tests still target September until the November source
+semantics, passage aliases and complete materialization pass their own release gates.
+See [November migration research and remaining work](docs/research/november-source-migration.md).
+
 ## Target architecture
 
 The release target is a complete native TF model of the supported Open Greek corpus semantics:
@@ -61,6 +70,17 @@ opengreek-tf verify-source upstream/open-greek-corpus
 ```
 
 `fetch` installs the exact supported publishing commit as a detached checkout and verifies the repository origin plus `data/corpus_release.json` identity before returning it. The destination must be absent or empty. The upstream repository is large, so acquisition is intentionally separate from ordinary unit tests.
+
+For the newer source identity **without changing the old converter pin**:
+
+```bash
+opengreek-tf source-info --release corpus-2026-11-17
+opengreek-tf fetch upstream/open-greek-november --release corpus-2026-11-17
+opengreek-tf verify-source upstream/open-greek-november --release corpus-2026-11-17
+```
+
+These commands validate acquisition and the release manifest; they do not enable
+`convert-primary`, `convert-texts` or `audit-source` on the new source yet.
 
 Network access belongs to acquisition only. Later conversion commands receive a verified local checkout and must not fetch or repair source data.
 
