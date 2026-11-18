@@ -42,9 +42,14 @@ record is a legitimate source fact, not a manufactured lexical word.
   fields and use native TF node/edge topology, not sidecars or stringified
   JSON. A full-scale implementation must measure fact-node amplification
   and avoid redundant full `text` strings where text atoms already suffice.
-- The full published source has **zero carriage returns** in audited string
-  values (complete #30 census); the TF fact writer must still fail closed if
-  future source revisions introduce unsupported TF string controls.
+- The **September 2026** published source has **zero carriage returns** in audited
+  source strings (complete #30 census). The **November** source includes 73 CR in
+  paratext text. Metadata-only source facts containing CR use genuinely typed,
+  ordered native integer-13 `crFragment` nodes and normal non-CR fragments,
+  with independent F/E reconstruction and original JSONL conservation. Raw CR
+  feature values and ordinary primary passage `T.text` still lack a source-exact
+  Text-Fabric rendering contract, so primary CR is rejected. Neither source
+  revision is silently normalized.
 - The root/source occurrence identity must be recorded separately, not
   assumed recoverable from a possibly duplicated `locus` label.
 
