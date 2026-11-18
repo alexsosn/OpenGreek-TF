@@ -9,6 +9,11 @@ on:
       - "tests/test_new_release_manifest.py"
       - ".github/workflows/november-source-pin.yml"
       - "docs/research/november-source-migration.md"
+      - "src/opengreek_tf/record_stream.py"
+      - "src/opengreek_tf/text_materializer.py"
+      - "src/opengreek_tf/unaligned_materializer.py"
+      - "src/opengreek_tf/jsonl_conservation.py"
+      - "tests/test_record_stream.py"
   workflow_dispatch:
 
 permissions:
@@ -39,6 +44,9 @@ jobs:
           printf '%s\n' \
             '/data/corpus_release.json' \
             '/data/public_export.json' \
+            '/data/corpus/' \
+            '/data/corpus_secondary/' \
+            '/data/paratext/' \
             '/data/corpus_changes/dioscorides-pedanius.de-materia-medica.printed-divisions.json' \
             > new-source/.git/info/sparse-checkout
           git -C new-source fetch --depth 1 --filter=blob:none origin \
@@ -100,3 +108,83 @@ jobs:
               "dioscorides_withdrawn": len(change["withdrawn"]),
               "native_tf_migration_complete": False,
           }, sort_keys=True))
+
+      - name: Audit ALL actual November original text-family schemas, nested paths and CR
+        shell: python
+        run: |
+          from collections import Counter
+          from pathlib import Path
+          import json
+          from opengreek_tf.source import verify_source
+          from opengreek_tf.release import NOVEMBER_RELEASE
+
+          root = Path("new-source")
+          assert verify_source(root, identity=NOVEMBER_RELEASE)
+          def kind(x):
+              if x is None:
+                  return "null"
+              if type(x) is bool:
+                  return "bool"
+              return type(x).__name__
+          def scan(value, path, nested, cr):
+              if type(value) is dict:
+                  nested[("object", path, tuple(value))] += 1
+                  for k, v in value.items():
+                      scan(v, f"{path}.{k}" if path else k, nested, cr)
+              elif type(value) is list:
+                  nested[("array", path, kind(value[0]) if value else "empty")] += 1
+                  for item in value:
+                      scan(item, path + "[]", nested, cr)
+              elif type(value) is str and "\r" in value:
+                  cr[path] += value.count("\r")
+          report = {}
+          for family, dirname, expected in (
+              ("primary", "corpus", 3939),
+              ("secondary", "corpus_secondary", 560),
+              ("paratext", "paratext", 17),
+          ):
+              paths = sorted((root / "data" / dirname).rglob("*.jsonl"))
+              assert len(paths) == expected, (family, len(paths), expected)
+              field_types = Counter()
+              variants = Counter()
+              nested = Counter()
+              cr = Counter()
+              rows = 0
+              files_with_rows = 0
+              for path in paths:
+                  file_rows = 0
+                  with path.open("rb") as source:
+                      for lineno, raw in enumerate(source, 1):
+                          obj = json.loads(raw)
+                          assert type(obj) is dict, (path, lineno)
+                          assert type(obj.get("text")) is str, (path, lineno)
+                          rows += 1
+                          file_rows += 1
+                          variants[tuple(sorted(obj))] += 1
+                          for name, value in obj.items():
+                              field_types[(name, kind(value))] += 1
+                              if type(value) in (dict, list) or (type(value) is str and "\r" in value):
+                                  scan(value, name, nested, cr)
+                  files_with_rows += file_rows > 0
+              report[family] = {
+                  "files": len(paths), "nonempty_files": files_with_rows,
+                  "rows": rows,
+                  "field_types": [{"field": k, "type": t, "count": n}
+                                  for (k, t), n in sorted(field_types.items())],
+                  "row_variants": [{"keys": list(keys), "count": n}
+                                   for keys, n in variants.most_common(30)],
+                  "nested_types": [{"type": t, "path": p, "shape": list(shape) if type(shape) is tuple else shape, "count": n}
+                                   for (t, p, shape), n in nested.most_common(55)],
+                  "cr_paths": dict(sorted(cr.items())),
+                  "nested_paratext_paths": [
+                      p.relative_to(root).as_posix() for p in paths
+                      if len(p.relative_to(root).parts) > 3
+                  ][:25] if family == "paratext" else [],
+              }
+          print("NOVEMBER_SOURCE_SCHEMA_CENSUS=" + json.dumps(report, ensure_ascii=True, sort_keys=True))
+          with open(__import__("os").environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("## Complete pinned November source schema census\n\n")
+              for family, facts in report.items():
+                  f.write(f"- {family}: {facts['files']} files, {facts['rows']} original rows, "
+                          f"{len(facts['field_types'])} field+type variants, "
+                          f"CR paths {facts['cr_paths']}\n")
