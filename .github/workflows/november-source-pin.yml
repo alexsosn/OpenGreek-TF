@@ -14,6 +14,7 @@ on:
       - "src/opengreek_tf/unaligned_materializer.py"
       - "src/opengreek_tf/jsonl_conservation.py"
       - "tests/test_record_stream.py"
+      - "tests/test_november_text_schema.py"
   workflow_dispatch:
 
 permissions:
@@ -188,3 +189,69 @@ jobs:
                   f.write(f"- {family}: {facts['files']} files, {facts['rows']} original rows, "
                           f"{len(facts['field_types'])} field+type variants, "
                           f"CR paths {facts['cr_paths']}\n")
+
+      - name: Real November primary + 65 Meibom secondary + 9 nested Gutenberg TF CLI smoke
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.release import NOVEMBER_RELEASE
+
+          selected = (
+              "data/corpus/abas.fragmenta.jsonl",
+              "data/corpus_secondary/nicomachus-mathematics.excerpta.jsonl",
+              "data/paratext/gutenberg/66595.jsonl",
+          )
+          root = Path("new-source")
+          destination = Path("real-november-selected-tf")
+          command = [
+              "opengreek-tf", "convert-texts", str(root),
+              "--release", NOVEMBER_RELEASE.tag,
+          ]
+          for file in selected:
+              command.extend(["--file", file])
+          output = subprocess.check_output(
+              [*command, "--output", str(destination)], text=True,
+          )
+          report = json.loads(output)
+          assert report["revision"] == NOVEMBER_RELEASE.commit
+          assert (report["primary_passages"], report["secondary_witnesses"],
+                  report["paratext_records"]) == (1, 65, 9)
+          assert report["records"] == 75
+          loaded = read_native_records(destination)
+          assert len(loaded) == 75
+          first_meibom = loaded[1]
+          assert first_meibom.fields.require("source_page").require("book") is None
+          first_gutenberg = loaded[-9]
+          assert first_gutenberg.source_file == selected[2]
+          assert first_gutenberg.fields.require("source_sha256")
+          independent = validate_native_jsonl_sources(
+              root, selected, destination, identity=NOVEMBER_RELEASE,
+          )
+          assert independent.records == 75
+          assert independent.original_source_sha256 == report["original_source_sha256"]
+
+          # One actually published separate Gutenberg file contains source CR.
+          # Do not report native output when Text-Fabric cannot preserve U+000D.
+          unsafe = Path("november-cr-unsafe-tf")
+          check = subprocess.run([
+              "opengreek-tf", "convert-texts", str(root),
+              "--release", NOVEMBER_RELEASE.tag,
+              "--file", "data/paratext/gutenberg/32549.jsonl",
+              "--output", str(unsafe),
+          ], capture_output=True, text=True)
+          assert check.returncode != 0
+          assert "carriage return" in check.stderr
+          assert not unsafe.exists()
+
+          print("NOVEMBER_SELECTED_REAL_TF=" + json.dumps({
+              "status": "PASS", "rows": independent.records,
+              "primary": 1, "secondary": 65, "nested_paratext": 9,
+              "source_sha256": independent.original_source_sha256,
+              "native_sha256": report["canonical_sha256"],
+              "cr_containing_source_file": "REJECTED_LOSSLESSLY",
+              "full_november_release": False,
+          }, sort_keys=True))
