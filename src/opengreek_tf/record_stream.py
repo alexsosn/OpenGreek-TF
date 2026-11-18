@@ -8,6 +8,7 @@ arrays remain inspectable typed values, never serialized feature blobs.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,7 +51,7 @@ class FieldObject:
         raise KeyError(key)
 
 
-FieldValue: TypeAlias = str | int | bool | None | FieldArray | FieldObject
+FieldValue: TypeAlias = str | int | float | bool | None | FieldArray | FieldObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,8 +92,23 @@ class NullableSpec:
     item: SchemaSpec
 
 
+@dataclass(frozen=True, slots=True)
+class ChoiceSpec:
+    """Mutually exclusive source-observed nested object keysets."""
+
+    options: tuple[ObjectSpec, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ScalarChoiceSpec:
+    """Explicit union of scalar source types, never Python numeric coercion."""
+
+    options: tuple[type[str] | type[int], ...]
+
+
 SchemaSpec: TypeAlias = (
-    type[str] | type[int] | type[bool] | ArraySpec | ObjectSpec | NullableSpec
+    type[str] | type[int] | type[float] | type[bool]
+    | ArraySpec | ObjectSpec | NullableSpec | ChoiceSpec | ScalarChoiceSpec
 )
 
 
@@ -106,6 +122,14 @@ def _obj(**fields: SchemaSpec) -> ObjectSpec:
 
 def _nullable(item: SchemaSpec) -> NullableSpec:
     return NullableSpec(item)
+
+
+def _choice(*options: ObjectSpec) -> ChoiceSpec:
+    return ChoiceSpec(options)
+
+
+def _scalar_choice(*options: type[str] | type[int]) -> ScalarChoiceSpec:
+    return ScalarChoiceSpec(options)
 
 
 # Exact observed field types from the complete pinned-release semantic audit.
@@ -213,16 +237,80 @@ _NOVEMBER_MEIBOM_PAGE = _obj(
     work=str,
     scan_page=int,
     printed_page=int,
-    book=_nullable(str),
+    book=_nullable(_scalar_choice(str, int)),
     greek_column=str,
     duplicate_scan=bool,
 )
+
+# Original November secondary witnesses: preserve their declared authority,
+# duplicate history, source-image crop coordinates, and former-primary facts
+# as typed native sourceFacts. Keysets are based on ALL 338,245 tagged rows.
+_NOVEMBER_CROP_PAGE = _obj(
+    crop_size=_array(int), id=str, max_side=int, path=str,
+    pixel_box=_array(int), printed_column=int, region=_array(float),
+    sha256=str, source=str, source_page=int,
+)
+_NOVEMBER_TARGET = _obj(slug=str, path=str, locus=str)
+_NOVEMBER_ORIGINAL_ROW = _obj(
+    urn=str, edition=str, locus=str, source=str, license=str,
+    text=str, text_lines=_array(str),
+)
+_NOVEMBER_SECONDARY_FIELDS: dict[str, SchemaSpec] = {
+    "source_page": _choice(_NOVEMBER_MEIBOM_PAGE, _NOVEMBER_CROP_PAGE),
+    "evidence": str,
+    "original_locus": str,
+    "original_work": str,
+    "original_edition": str,
+    "original_urn": str,
+    "original_row": _NOVEMBER_ORIGINAL_ROW,
+    "source_char_range": _array(int),
+    "source_pdf_page": int,
+    "source_role": str,
+    "source_role_evidence": str,
+    "witness_group": str,
+    "dubner_source_scope": _obj(authority=str),
+    "source_location": _obj(volume=str, marker_page=str, start_line=str),
+    "current_target": _NOVEMBER_TARGET,
+    "reviewed_duplicate_witness": _obj(authority=str, key=str),
+    "pindar_duplicate_review": _obj(authority=str),
+    "canonical_target": _NOVEMBER_TARGET,
+    "independent_witness": bool,
+    "model": str,
+    "revision": str,
+    "vote_group": str,
+    "merged_read": _MERGED_READ,
+}
+_NOVEMBER_MEIBOM_KEYS = frozenset(_NOVEMBER_MEIBOM_PAGE.fields)
+_NOVEMBER_CROP_KEYS = frozenset(_NOVEMBER_CROP_PAGE.fields)
+
+
 _NOVEMBER_GUTENBERG: dict[str, SchemaSpec] = {
     "locus": str, "source": str, "source_sha256": str, "text": str,
 }
 
 
 def _decode(value: object, spec: SchemaSpec, *, field: str, context: str) -> FieldValue:
+    if isinstance(spec, ScalarChoiceSpec):
+        if type(value) not in spec.options:
+            raise RecordParseError(
+                f"{context}: {field}: expected str or int source scalar"
+            )
+        if isinstance(value, (str, int)):
+            return value
+        raise AssertionError("unreachable audited scalar type")
+    if isinstance(spec, ChoiceSpec):
+        if not isinstance(value, dict):
+            raise RecordParseError(f"{context}: {field}: expected object variant")
+        known = set().union(*(option.fields.keys() for option in spec.options))
+        unexpected = sorted(set(value) - known)
+        if unexpected:
+            raise RecordParseError(
+                f"{context}: {field}.{unexpected[0]}: unknown source field"
+            )
+        matched = [option for option in spec.options if set(value) == set(option.fields)]
+        if len(matched) != 1:
+            raise RecordParseError(f"{context}: {field}: unsupported source object keyset")
+        return _decode(value, matched[0], field=field, context=context)
     if isinstance(spec, NullableSpec):
         if value is None:
             return None
@@ -252,7 +340,11 @@ def _decode(value: object, spec: SchemaSpec, *, field: str, context: str) -> Fie
         raise RecordParseError(
             f"{context}: {field}: expected {spec.__name__}, found {type(value).__name__}"
         )
-    # The exact runtime type check above narrows JSON scalars for mypy.
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise RecordParseError(f"{context}: {field}: nonfinite original float")
+        return value
+    # Exact runtime type checks prevent treating booleans as integers.
     if isinstance(value, (str, int, bool)):
         return value
     raise AssertionError("unreachable scalar schema type")
@@ -305,23 +397,117 @@ def _validate_record_variants(
         reason = fields.get("secondary_reason")
         source_page = fields.get("source_page")
         evidence = fields.get("evidence")
-        if identity.tag == NOVEMBER_RELEASE.tag and (
-            source_page is not None or evidence is not None
-        ):
-            if not isinstance(source_page, FieldObject):
-                raise RecordParseError(f"{context}: source_page is required")
-            if not isinstance(evidence, str):
-                raise RecordParseError(f"{context}: evidence is required")
-            if {key for key, _ in source_page.items} != {
-                "work", "scan_page", "printed_page", "book",
-                "greek_column", "duplicate_scan",
-            }:
-                raise RecordParseError(f"{context}: incomplete source_page fields")
-            if rank is not None or reason is not None or displacement is not None:
+        november = identity.tag == NOVEMBER_RELEASE.tag
+        dubner = fields.get("dubner_source_scope")
+        pindar = fields.get("pindar_duplicate_review")
+        reviewed = fields.get("reviewed_duplicate_witness")
+        tagged_source_page = isinstance(source_page, FieldObject)
+        alternative = november and (
+            tagged_source_page or dubner is not None
+            or pindar is not None or reviewed is not None
+        )
+        if november:
+            if evidence is not None and source_page is None and reviewed is None:
                 raise RecordParseError(
-                    f"{context}: Meibom source_page must not claim alignment/rank"
+                    f"{context}: source_page is required for Meibom evidence"
                 )
-            return
+            if source_page is not None:
+                if not isinstance(source_page, FieldObject):
+                    raise RecordParseError(f"{context}: source_page must be an object")
+                keys = {key for key, _ in source_page.items}
+                if keys == _NOVEMBER_MEIBOM_KEYS:
+                    if not isinstance(evidence, str):
+                        raise RecordParseError(f"{context}: evidence required for source_page")
+                    if any(value is not None for value in (rank, reason, displacement)):
+                        raise RecordParseError(
+                            f"{context}: Meibom source_page cannot claim rank/displacement"
+                        )
+                elif keys == _NOVEMBER_CROP_KEYS:
+                    crop = source_page.require("region")
+                    crop_size = source_page.require("crop_size")
+                    pixels = source_page.require("pixel_box")
+                    if (
+                        not isinstance(crop, FieldArray) or len(crop.items) != 4
+                        or not isinstance(crop_size, FieldArray)
+                        or len(crop_size.items) != 2
+                        or not isinstance(pixels, FieldArray)
+                        or len(pixels.items) != 4
+                    ):
+                        raise RecordParseError(
+                            f"{context}: source_page.region/crop_size/pixel_box lengths"
+                        )
+                    required_crop = (
+                        "source_role", "current_target", "model",
+                        "revision", "vote_group",
+                    )
+                    for name in required_crop:
+                        if fields.get(name) is None:
+                            raise RecordParseError(f"{context}: missing cropped source {name}")
+                    if evidence is not None or any(
+                        value is not None for value in (rank, reason, displacement)
+                    ):
+                        raise RecordParseError(
+                            f"{context}: cropped source_page cannot claim rank/evidence"
+                        )
+                else:
+                    raise RecordParseError(f"{context}: unsupported source_page variant")
+            if dubner is not None:
+                required_dubner = (
+                    "original_locus", "original_work", "original_edition",
+                    "source_char_range", "source_pdf_page", "source_role",
+                    "source_role_evidence", "witness_group",
+                )
+                for name in required_dubner:
+                    if fields.get(name) is None:
+                        raise RecordParseError(f"{context}: missing Dubner {name}")
+                char_range = fields.require("source_char_range")
+                if not isinstance(char_range, FieldArray) or len(char_range.items) != 2:
+                    raise RecordParseError(f"{context}: source_char_range must be two ints")
+                begin, finish = char_range.items
+                if (
+                    type(begin) is not int or type(finish) is not int
+                    or begin < 0 or finish < begin
+                ):
+                    raise RecordParseError(f"{context}: invalid source_char_range")
+            if reviewed is not None:
+                for name in (
+                    "current_target", "source_role", "source_role_evidence",
+                ):
+                    if fields.get(name) is None:
+                        raise RecordParseError(f"{context}: reviewed witness needs {name}")
+            if pindar is not None:
+                for name in (
+                    "canonical_target", "original_row", "original_urn",
+                    "original_locus", "original_edition", "source_role",
+                ):
+                    if fields.get(name) is None:
+                        raise RecordParseError(f"{context}: Pindar needs {name}")
+                if type(fields.get("independent_witness")) is not bool:
+                    raise RecordParseError(
+                        f"{context}: Pindar independent_witness must be boolean"
+                    )
+                former = fields.require("original_row")
+                if not isinstance(former, FieldObject):
+                    raise RecordParseError(f"{context}: original_row must be an object")
+                required_original = {
+                    "urn", "edition", "locus", "source", "license", "text",
+                }
+                keys = {key for key, _ in former.items}
+                if keys not in (required_original, required_original | {"text_lines"}):
+                    raise RecordParseError(
+                        f"{context}: original_row incomplete or unrecognized"
+                    )
+            merged_read = fields.get("merged_read")
+            if merged_read is not None:
+                if not isinstance(merged_read, FieldObject):
+                    raise RecordParseError(f"{context}: invalid merged_read")
+                if {key for key, _ in merged_read.items} not in (
+                    {"guessed", "substituted", "with"},
+                    {"guesses", "note", "of"},
+                ):
+                    raise RecordParseError(
+                        f"{context}: merged_read not an audited complete variant"
+                    )
         if displacement is not None:
             if rank is not None or reason is not None:
                 raise RecordParseError(
@@ -333,6 +519,8 @@ def _validate_record_variants(
                 raise RecordParseError(
                     f"{context}: displaced_by must have date, pass and reason"
                 )
+        elif rank is None and reason is None and alternative:
+            pass  # Genuine non-ranked former primary, cropped, review or scope.
         elif rank is None or reason is None:
             missing = "rank" if rank is None else "secondary_reason"
             raise RecordParseError(
@@ -369,10 +557,7 @@ def parse_file(
     required = REQUIRED[family]
     if identity.tag == NOVEMBER_RELEASE.tag:
         if family == "secondary":
-            fields_schema = {
-                **fields_schema, "source_page": _NOVEMBER_MEIBOM_PAGE,
-                "evidence": str,
-            }
+            fields_schema = {**fields_schema, **_NOVEMBER_SECONDARY_FIELDS}
         elif (
             family == "paratext"
             and Path(relative_file).parts[2] == "gutenberg"
