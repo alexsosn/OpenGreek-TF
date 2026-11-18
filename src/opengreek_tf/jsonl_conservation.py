@@ -76,7 +76,7 @@ def _exact_original(original: Any, restored: FieldValue) -> bool:
             for value, loaded_value in zip(original, restored.items, strict=True)
         )
     return (
-        type(original) in (str, int, bool, type(None))
+        type(original) in (str, int, float, bool, type(None))
         and type(original) is type(restored)
         and original == restored
     )
