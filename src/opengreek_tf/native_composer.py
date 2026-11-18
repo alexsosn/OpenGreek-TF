@@ -8,8 +8,8 @@ The loader independently reconstructs every source graph from F/E.
 from __future__ import annotations
 
 import hashlib
-import math
 import json
+import math
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
