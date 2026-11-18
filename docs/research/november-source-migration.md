@@ -33,6 +33,25 @@ The `data/paratext/` Git prefix includes a README, which changed but is excluded
 
 The new release's **3939 work manifest count is not a physical passage record count**. No complete November textual row census or graph build has yet been proved. Every new file and changed blob must be classified by actual source records before treating the new snapshot as ready for materialization.
 
+## Complete real November source-family schema census (#88, PR #92)
+
+The existing pinned [November source CI workflow](../../.github/workflows/november-source-pin.yml) now scans **every original JSONL row** at the immutable November publishing commit. It reports exact per-family field/type occurrences, distinct record keysets, nested key shapes, CR and nested file paths, without storing any corpus data in this repository.
+
+| Original family | JSONL files | Original rows | Nonempty files |
+| --- | ---: | ---: | ---: |
+| Primary | 3,939 | **1,913,683** | 3,939 |
+| Secondary | 560 | **338,245** | 559 |
+| Paratext | 17 | **23,969** | 17 |
+| **Total** | **4,516** | **2,275,897** | **4,515** |
+
+The empty Democritus secondary source still exists. The November complete original-text physical-row count **is not** the release manifest's primary-passage count, and neither is the September 2,293,990-row total.
+
+New semantic fields are substantial: **15,834** primary `analysis_segments/analysis_text` rows, **547** primary `tokens` arrays and `critical_markup` objects, **27,913** secondary Dubner provenance structures, **4,235** secondary Meibom-style six-field `source_page` objects with `evidence`, **8** alternate cropped-image `source_page` structures with *floating-point scan coordinates*, **3,139** paratext Westermann editorial review structures, **419** paratext `ocr_consensus` records containing 53,093 nested token/slot objects, and **1,170** distinct paratext scan page objects.
+
+**CR census:** 73 U+000D codepoints, confined to paratext `text`, zero in primary and secondary text. Standard Text-Fabric feature serialization is not CR-lossless. Do not normalize CR, misrepresent the default native text view as faithful, omit affected original rows, or claim full November migration. Issue #29 remains an actual source-backed blocker.
+
+The first **selected-file** compatibility slice reuses the generic typed source fact graph and writer for the six-key Meibom `source_page` with explicit JSON null/boolean and the complete original Gutenberg `locus/source/source_sha256/text` records in `data/paratext/gutenberg/`. The original September reader remains strict. Version-specific unsupported November fields, cropped-image source page floats, complex token/editorial structures and CR-containing files **fail closed**, rather than being flattened or ignored. The real-source acceptance test selects one complete primary source file, a complete 65-row Nicomachus witness and a complete 9-row nested Gutenberg file, then independently compares the loaded native TF source facts to stock original JSONL.
+
 ## Opt-in researcher/developer commands
 
 ```bash
