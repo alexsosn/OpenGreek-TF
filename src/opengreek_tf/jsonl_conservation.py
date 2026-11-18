@@ -140,12 +140,12 @@ def validate_native_jsonl_sources(
                 raise JsonlConservationError(
                     f"source path escapes root or is not a file: {relative}"
                 )
-            identity = resolved_source.stat()
+            file_stat = resolved_source.stat()
         except (OSError, RuntimeError) as exc:
             raise JsonlConservationError(
                 f"missing or inaccessible original source: {relative}"
             ) from exc
-        physical = (identity.st_dev, identity.st_ino)
+        physical = (file_stat.st_dev, file_stat.st_ino)
         if physical in physical_ids:
             raise JsonlConservationError(f"duplicate physical original source file: {relative}")
         physical_ids.add(physical)
