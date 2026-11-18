@@ -255,6 +255,7 @@ jobs:
           from opengreek_tf.release import NOVEMBER_RELEASE
           from opengreek_tf.native_composer import read_native_records
           from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+          from opengreek_tf.research_queries import search_native
 
           root = Path("new-source")
           cr_file = "data/paratext/gutenberg/32549.jsonl"
@@ -296,6 +297,24 @@ jobs:
           assert [row.fields.require("text") for row in recovered[-70:]] == [
               item["text"] for item in originals
           ]
+          original_cr = [
+              item for item in originals if "\r" in item["text"]
+          ]
+          native_hits = search_native(
+              output_dir, kind="paratext-record", contains="\r",
+              source_file=cr_file, max_results=100,
+          )
+          assert [(hit.locus, hit.text) for hit in native_hits] == [
+              (row["locus"], row["text"]) for row in original_cr
+          ]
+          cli_lines = subprocess.check_output([
+              "opengreek-tf", "search-native", str(output_dir),
+              "--kind", "paratext-record", "--contains", "\r",
+              "--source-file", cr_file, "--max-results", "100",
+          ], text=True).splitlines()
+          assert [
+              (item["locus"], item["text"]) for item in map(json.loads, cli_lines)
+          ] == [(row["locus"], row["text"]) for row in original_cr]
           api = Fabric(locations=str(output_dir), silent="deep").load(
               "fragment_codepoint fragment_kind fragment_position fragment_text "
               "has_cr_fragment", silent="deep",
@@ -313,6 +332,7 @@ jobs:
               "Gutenberg_32549_records": 70,
               "CR_codepoint_nodes": 73,
               "native_F_E_reconstruction": "PASS",
+              "researcher_search_native_and_cli": "PASS",
               "stock_jsonl_independent_validation": "PASS",
               "source_sha256": independent.original_source_sha256,
               "native_sha256": report["canonical_sha256"],
