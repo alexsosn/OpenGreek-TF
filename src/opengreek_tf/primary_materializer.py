@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .native_composer import NativeRecord, NativeStats, write_native_records
 from .record_stream import parse_file
+from .release import SUPPORTED_RELEASE, ReleaseIdentity
 
 
 def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
@@ -44,7 +45,8 @@ def _check_files(root: Path, relative_files: tuple[str, ...]) -> None:
 
 
 def iter_native_primary(
-    root: Path, relative_files: tuple[str, ...],
+    root: Path, relative_files: tuple[str, ...], *,
+    identity: ReleaseIdentity = SUPPORTED_RELEASE,
 ) -> Iterator[NativeRecord]:
     """Preserve caller file order, then 1-based physical JSONL row order.
 
@@ -53,7 +55,7 @@ def iter_native_primary(
     """
     _check_files(root, relative_files)
     for relative in relative_files:
-        for row in parse_file(root, relative):
+        for row in parse_file(root, relative, identity=identity):
             if row.family != "primary":
                 raise ValueError("nonprimary source record selected")
             yield NativeRecord(
