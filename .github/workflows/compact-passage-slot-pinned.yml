@@ -22,6 +22,12 @@ jobs:
   native-compact-passage-source-conservation:
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        rung:
+          - {name: reference-82k, min_rows: 75000, max_rows: 95000}
+          - {name: extended-130k, min_rows: 130000, max_rows: 200000}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,9 +53,14 @@ jobs:
             --cache-hit "$SOURCE_CACHE_HIT"
       - name: Build genuinely compact passage-slot Greek + witness + paratext native TF graph
         shell: python
+        env:
+          RUNG_NAME: ${{ matrix.rung.name }}
+          MIN_ROWS: ${{ matrix.rung.min_rows }}
+          MAX_ROWS: ${{ matrix.rung.max_rows }}
         run: |
           import hashlib
           import json
+          import os
           import resource
           import subprocess
           import time
@@ -68,10 +79,13 @@ jobs:
           all_inventory = select_all_text_files(root)
           assert all_inventory.file_counts == (3909, 533, 5)
           assert len(all_inventory.files) == 4447
+          minimum_rows = int(os.environ["MIN_ROWS"])
+          maximum_rows = int(os.environ["MAX_ROWS"])
+          rung_name = os.environ["RUNG_NAME"]
           primary = select_whole_primary_rung(
-              root, minimum_rows=75_000, maximum_rows=95_000,
+              root, minimum_rows=minimum_rows, maximum_rows=maximum_rows,
           )
-          assert 75_000 <= primary.primary_rows <= 95_000
+          assert minimum_rows <= primary.primary_rows <= maximum_rows
           selected_secondary = (
               "data/corpus_secondary/abydenus.fragmenta.jsonl",
           )
@@ -100,7 +114,7 @@ jobs:
           command = ["opengreek-tf", "convert-texts", str(root)]
           for name in files:
               command.extend(["--file", name])
-          output = Path("native-pinned-compact-passage-75k")
+          output = Path(f"native-pinned-compact-passage-{rung_name}")
           command.extend(["--slot-layout", "passage", "--output", str(output)])
           start = time.perf_counter()
           proc = subprocess.run(command, text=True, capture_output=True, check=True)
@@ -133,9 +147,10 @@ jobs:
           # Pin the PREVIOUS RELEASE-WRITER original-source and canonical
           # native F/E digests: a change must be explicitly reviewed as a
           # serialization/ontology change, never silently credited to memory.
-          assert independent.original_source_sha256 == (
-              "a644858e5ada9907b8e2c8fe8f28aa574ce6c9f0b9b144667c3c0548600ca806"
-          )
+          if rung_name == "reference-82k":
+              assert independent.original_source_sha256 == (
+                  "a644858e5ada9907b8e2c8fe8f28aa574ce6c9f0b9b144667c3c0548600ca806"
+              )
           manifest = native_tf_manifest(output)
           assert manifest.output_bytes == report["tf_bytes"]
           assert manifest.output_bytes > 0
@@ -143,6 +158,10 @@ jobs:
           assert manifest.canonical_sha256 != (
               "0b6550e112476ab5a9bc2699abb3c2df68df94c38344f9223e7e4961864f6513"
           )
+          if rung_name == "reference-82k":
+              assert manifest.canonical_sha256 == (
+                  "c2b51974b6ca3d16f0d1422c1b8f080827c8024f3817d324c2f8b836b9ecb13e"
+              )
           fabric = Fabric(locations=str(output), silent="deep")
           api = fabric.load("source_seq source_record_id record_kind has_fact", silent="deep")
           assert api
@@ -169,7 +188,8 @@ jobs:
                          for h in hits)
           assert verify_source(root).revision == revision
           print(json.dumps({
-              "compact_passage_slot_82k_cross_family_tf": "PASS",
+              "compact_passage_slot_cross_family_tf": "PASS",
+              "scale_rung": rung_name,
               "slot_layout": "passage",
               "expected_native_text_slots": nonempty_primary,
               "total_native_atom_slots": len(api.F.otype.s("atom")),
