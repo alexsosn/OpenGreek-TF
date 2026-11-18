@@ -282,6 +282,12 @@ def _decode(value: object, spec: SchemaSpec, *, field: str, context: str) -> Fie
     if isinstance(spec, ChoiceSpec):
         if not isinstance(value, dict):
             raise RecordParseError(f"{context}: {field}: expected object variant")
+        known = set().union(*(option.fields.keys() for option in spec.options))
+        unexpected = sorted(set(value) - known)
+        if unexpected:
+            raise RecordParseError(
+                f"{context}: {field}.{unexpected[0]}: unknown source field"
+            )
         matched = [option for option in spec.options if set(value) == set(option.fields)]
         if len(matched) != 1:
             raise RecordParseError(f"{context}: {field}: unsupported source object keyset")
@@ -382,6 +388,10 @@ def _validate_record_variants(
             or pindar is not None or reviewed is not None
         )
         if november:
+            if evidence is not None and source_page is None and reviewed is None:
+                raise RecordParseError(
+                    f"{context}: source_page is required for Meibom evidence"
+                )
             if source_page is not None:
                 if not isinstance(source_page, FieldObject):
                     raise RecordParseError(f"{context}: source_page must be an object")
