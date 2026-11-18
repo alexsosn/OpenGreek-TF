@@ -462,8 +462,8 @@ jobs:
           assert independent.original_source_sha256 == report["original_source_sha256"]
           loaded = read_native_records(output)
           assert len(loaded) == 125
-          assert [row.source_file for row in loaded[70:73]] == [selected[2]] * 3
-          assert loaded[73].source_file == selected[3]
+          assert [row.source_file for row in loaded[66:69]] == [selected[2]] * 3
+          assert loaded[69].source_file == selected[3]
           hesychius = [row for row in loaded if row.source_file == selected[5]]
           assert len(hesychius) == 8
           for row in hesychius:
