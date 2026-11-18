@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from tf.fabric import Fabric  # type: ignore[import-untyped]
 
+from opengreek_tf.cli import main
 from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
 from opengreek_tf.native_composer import (
     NativeComposeError,
@@ -21,6 +22,7 @@ from opengreek_tf.native_composer import (
     write_native_records,
 )
 from opengreek_tf.record_stream import FieldObject
+from opengreek_tf.research_queries import search_native
 from opengreek_tf.release import NOVEMBER_RELEASE
 from opengreek_tf.text_materializer import materialize_texts
 from opengreek_tf.tf_integrity import native_tf_manifest
@@ -157,6 +159,34 @@ def test_native_CR_rejects_forged_F_E(tmp_path: Path, source: str) -> None:
     shutil.copyfile(output / source, output / "invented_semantics.tf")
     with pytest.raises(NativeComposeError, match="unexpected|missing"):
         read_native_records(output)
+
+
+def test_researcher_search_native_finds_literal_CR_without_normalization(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    original = "λόγος\r\nἄνθρωπος"
+    out = tmp_path / "native"
+    write_native_records((_record(original),), out)
+    results = search_native(
+        out, kind="paratext-record", contains="\r\n",
+        source_file=FILE, locus="apparatus.1",
+    )
+    assert len(results) == 1
+    assert results[0].text == original
+    assert results[0].source_file == FILE
+    assert results[0].source_ordinal == results[0].source_seq == 1
+    assert results[0].license is None
+    assert search_native(
+        out, kind="paratext-record", contains="λόγος\nἄνθρωπος",
+    ) == ()
+    assert main([
+        "search-native", str(out), "--kind", "paratext-record",
+        "--contains", "\r\n", "--source-file", FILE,
+        "--locus", "apparatus.1",
+    ]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["text"] == original
 
 
 def test_primary_CR_still_rejected_before_writing(tmp_path: Path) -> None:
