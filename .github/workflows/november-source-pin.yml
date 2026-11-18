@@ -262,12 +262,13 @@ jobs:
           originals = [
               json.loads(line) for line in (root / cr_file).read_bytes().splitlines()
           ]
-          assert len(originals) == 70
+          assert len(originals) == 30
           assert all(
               set(row) == {"locus", "text", "source", "source_sha256"}
               and type(row["text"]) is str for row in originals
           )
           assert sum(row["text"].count("\r") for row in originals) == 73
+          assert sum("\r" in row["text"] for row in originals) == 25
           selected = (
               "data/corpus/abas.fragmenta.jsonl",
               "data/corpus_secondary/nicomachus-mathematics.excerpta.jsonl",
@@ -285,16 +286,16 @@ jobs:
               *cmd, "--output", str(output_dir),
           ], text=True))
           assert (report["primary_passages"], report["secondary_witnesses"],
-                  report["paratext_records"]) == (1, 65, 79)
-          assert report["records"] == 145
+                  report["paratext_records"]) == (1, 65, 39)
+          assert report["records"] == 105
           independent = validate_native_jsonl_sources(
               root, selected, output_dir, identity=NOVEMBER_RELEASE,
           )
-          assert independent.records == 145
+          assert independent.records == 105
           assert independent.original_source_sha256 == report["original_source_sha256"]
           recovered = read_native_records(output_dir)
-          assert len(recovered) == 145
-          assert [row.fields.require("text") for row in recovered[-70:]] == [
+          assert len(recovered) == 105
+          assert [row.fields.require("text") for row in recovered[-30:]] == [
               item["text"] for item in originals
           ]
           original_cr = [
@@ -328,8 +329,8 @@ jobs:
           print("NOVEMBER_GENUINE_CR_NATIVE_TF=" + json.dumps({
               "status": "PASS",
               "source_release": NOVEMBER_RELEASE.release_id,
-              "original_records": 145,
-              "Gutenberg_32549_records": 70,
+              "original_records": 105,
+              "Gutenberg_32549_records": 30,
               "CR_codepoint_nodes": 73,
               "native_F_E_reconstruction": "PASS",
               "researcher_search_native_and_cli": "PASS",
