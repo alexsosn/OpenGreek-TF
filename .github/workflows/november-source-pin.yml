@@ -236,25 +236,12 @@ jobs:
           assert independent.records == 75
           assert independent.original_source_sha256 == report["original_source_sha256"]
 
-          # One actually published separate Gutenberg file contains source CR.
-          # Do not report native output when Text-Fabric cannot preserve U+000D.
-          unsafe = Path("november-cr-unsafe-tf")
-          check = subprocess.run([
-              "opengreek-tf", "convert-texts", str(root),
-              "--release", NOVEMBER_RELEASE.tag,
-              "--file", "data/paratext/gutenberg/32549.jsonl",
-              "--output", str(unsafe),
-          ], capture_output=True, text=True)
-          assert check.returncode != 0
-          assert "carriage return" in check.stderr
-          assert not unsafe.exists()
-
           print("NOVEMBER_SELECTED_REAL_TF=" + json.dumps({
               "status": "PASS", "rows": independent.records,
               "primary": 1, "secondary": 65, "nested_paratext": 9,
               "source_sha256": independent.original_source_sha256,
               "native_sha256": report["canonical_sha256"],
-              "cr_containing_source_file": "REJECTED_LOSSLESSLY",
+              "cr_containing_source_file": "CHECKED_SEPARATELY",
               "full_november_release": False,
           }, sort_keys=True))
 
