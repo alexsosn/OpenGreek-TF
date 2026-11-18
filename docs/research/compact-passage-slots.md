@@ -52,6 +52,20 @@ The existing compact-mode real-source GitHub Actions [run 42796361626](https://g
 
 That is an observed ~63% reduction in **builder** high-water RSS and ~23% smaller native feature files for this one original-source rung. Source facts/Unicode and original-source digest agree, but the native graph hash necessarily differs because TF slot addresses and query semantics differ. Distinct GitHub runner invocations are **not** controlled speed comparisons. The compact builder took 54.247 s on its own run including internal validation. No whole-corpus peak-RSS extrapolation is warranted because row lengths, nested fact counts and source family distributions vary.
 
-Issue #75's follow-up [PR #87](https://github.com/alexsosn/OpenGreek-TF/pull/87) extends the **existing** pinned source-conservation workflow with a second 130k–200k *whole-primary-file* rung and the same 160 genuine secondary/paratext rows, leaving the 82k regression intact and now pinning its compact TF digest. The larger run must independently prove original row/fact/text/slot fidelity and record actual RSS/disk/time and checksums. A failed or resource-exhausted rung is evidence of the limitation, not success.
+### Genuine larger-rung result: 131,981 original records
+
+[PR #87](https://github.com/alexsosn/OpenGreek-TF/pull/87)'s extended whole-file rung passed the unchanged public CLI, independent original stock JSONL/loaded TF Fabric F/E comparison and all loaded source-fact, text, identity and slot-count checks in [Actions run 44318388997](https://github.com/alexsosn/OpenGreek-TF/actions/runs/44318388997). The selected data are **382 entire primary JSONL files / 131,821 real primary passages**, plus the same 47 secondary witnesses and 113 paratext records, for **131,981 records / 385 original files**. The independently conserved output carried **1,003,224 native source facts**, **30,434,149 original Unicode codepoints** and exactly **263,802 native atom slots** (131,821 primary text slots + one actual source-row slot per original row).
+
+| Isolated measured property | Extended compact result |
+| --- | ---: |
+| Builder peak RSS | **3,615.16 MiB** |
+| Independently reloaded verifier process peak RSS | **3,427.44 MiB** |
+| Builder wall time, including writer's internal validation | **130.425 s** |
+| Separate stock JSONL/Fabric verification wall time | **22.123 s** |
+| Native TF feature bytes | **221,482,878** |
+| Original source SHA-256 | `06119f5e48700aeb44b2f06edc7f3dcf4149e06277bd333947e4c0c0d808f21a` |
+| Canonical native TF SHA-256 | `6f3aac47b8606dacb03561a723f66f4249de95b06de81fe61e8a3397320d3dec` |
+
+The existing 82,024-row benchmark was rerun in parallel and passed again, with identical native and original hashes and a **2,281.36 MiB** builder peak. Both source/TF hashes on both rungs are now regression-gated. The extension covers only **5.75% of the complete 2,293,990 textual original records**; selected row lengths and source fact density differ substantially between rungs. The result improves measured feasible sample coverage but does **not** establish the full graph's peak memory, allow a default word/run query replacement, or close #75.
 
 **No release gate automatically closes.** #3 ontology and query semantics require a substantive decision; #75/#6/#8/#9/#13/#14 still require a measured **complete** 2,293,990-record source-to-native-Fabric build, source and typed F/E global integrity, native disk/runtime/memory, author/work/citation navigation and researcher-facing browser smoke tests.
