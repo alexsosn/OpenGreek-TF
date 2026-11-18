@@ -61,7 +61,7 @@ def _source(root: Path) -> None:
     _file(root, PARATEXT, {
         "locus": "apparatus.1", "text": "l, 7. ἅμα B. μοι or ἐμοὶ.",
         "source": "gutenberg",
-        "source_sha256": "33762f8e07002c8f734e592a62100be482c805b14a40df0ba125c490d2fb069",
+        "source_sha256": "33762f8e07002c8f3c4195eeb3a33e2dcbf1144cbbf766861727845c1b204da2",
     })
 
 
@@ -108,7 +108,7 @@ def test_november_nested_gutenberg_source_exact_text_and_physical_path(
 def test_november_gutenberg_parses_raw_cr_without_normalizing_it(
     tmp_path: Path,
 ) -> None:
-    row = {"locus": "note.1", "source": "gutenberg",
+    row: dict[str, object] = {"locus": "note.1", "source": "gutenberg",
            "source_sha256": "a" * 64, "text": "τοῦ\r\nἄλλου"}
     _file(tmp_path, "data/paratext/gutenberg/32549.jsonl", row)
     parsed = next(parse_file(
