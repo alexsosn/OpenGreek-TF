@@ -77,7 +77,7 @@ def test_all_row_variants(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_mixed_nested_types(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"text": "α", "tokens": [{"flag": False, "x": 1}, {"x": 1.5, "flag": 0},
                                  None, "a", 1, True], "empty": []},
         {"text": "β", "tokens": [{"x": None, "flag": True}]},
@@ -133,7 +133,7 @@ def test_cr_empty_file_and_determinism(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_field_type_examples(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"text": "α", "page": 1},
         {"text": "β", "page": None},
         {"text": "γ", "page": 2},
