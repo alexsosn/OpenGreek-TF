@@ -22,6 +22,8 @@ def run_census(
     monkeypatch: pytest.MonkeyPatch,
     primary: list[dict[str, Any]],
     paratext: list[dict[str, Any]] | None = None,
+    *,
+    primary_raw: bytes | None = None,
 ) -> dict[str, Any]:
     note_rows = paratext or []
     workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -45,10 +47,12 @@ def run_census(
         if family == "paratext":
             directory_path /= "gutenberg"
         directory_path.mkdir(parents=True, exist_ok=True)
-        (directory_path / "fixture.jsonl").write_text(
-            "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
-            encoding="utf-8",
+        raw = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows).encode(
+            "utf-8",
         )
+        if family == "primary" and primary_raw is not None:
+            raw = primary_raw
+        (directory_path / "fixture.jsonl").write_bytes(raw)
     source_module = ModuleType("opengreek_tf.source")
     source_module.__dict__["verify_source"] = lambda *_a, **_kw: True
     release_module = ModuleType("opengreek_tf.release")
@@ -126,3 +130,34 @@ def test_cr_empty_file_and_determinism(tmp_path: Path, monkeypatch: pytest.Monke
         ("meta", "a.b"): 2, ("meta", "a", "b"): 1,
     }
     assert report["paratext"]["cr_paths"] == [{"path": ["text"], "count": 1}]
+
+
+def test_field_type_examples(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        {"text": "α", "page": 1},
+        {"text": "β", "page": None},
+        {"text": "γ", "page": 2},
+    ]
+    primary = run_census(tmp_path, monkeypatch, rows)["primary"]
+    assert len(primary["row_variants"]) == 1
+    examples = {
+        row["type"]: (row["count"], row["example"]["line"])
+        for row in primary["field_types"] if row["field"] == "page"
+    }
+    assert examples == {"int": (2, 1), "null": (1, 2)}
+    artifact = json.loads((tmp_path / "november-source-schema-census.json").read_text())
+    assert artifact["primary"] == primary
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        (b'{"text":"a","meta":{"x":1,"x":2}}\n', "duplicate source key"),
+        ('{"text":"a"}\n'.encode("utf-16"), "UTF-8"),
+    ],
+)
+def test_invalid_original_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: bytes, message: str,
+) -> None:
+    with pytest.raises(ValueError, match=rf"data/corpus/fixture\.jsonl:1:.*{message}"):
+        run_census(tmp_path, monkeypatch, [{"text": "a"}], primary_raw=raw)
