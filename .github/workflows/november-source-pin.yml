@@ -18,6 +18,7 @@ on:
       - "src/opengreek_tf/native_composer.py"
       - "tests/test_native_cr_source_facts.py"
       - "tests/test_november_secondary_complete.py"
+      - "tests/test_november_primary_complete.py"
       - "tests/test_november_schema_census.py"
       - "src/opengreek_tf/fact_graph.py"
   workflow_dispatch:
@@ -562,4 +563,63 @@ jobs:
               "source_sha256": independent.original_source_sha256,
               "native_sha256": report["canonical_sha256"],
               "all_secondary_records_materialized": False,
+          }, sort_keys=True))
+
+      - name: Parse all November primary rows and conserve real editorial editions in TF
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+          from opengreek_tf.record_stream import FieldArray, iter_family
+          from opengreek_tf.release import NOVEMBER_RELEASE
+          from opengreek_tf.native_composer import read_native_records
+          from opengreek_tf.jsonl_conservation import validate_native_jsonl_sources
+
+          root = Path("new-source")
+          rows = token_rows = tokens = 0
+          files = set()
+          for row in iter_family(root, "primary", identity=NOVEMBER_RELEASE):
+              rows += 1
+              files.add(row.relative_file)
+              value = row.fields.get("tokens")
+              if isinstance(value, FieldArray):
+                  token_rows += 1
+                  tokens += len(value.items)
+          assert (rows, len(files)) == (1913683, 3939)
+          assert (token_rows, tokens) == (547, 3427)
+          selected = (
+              "data/corpus/anonymous.p-herc-1026.jsonl",
+              "data/corpus/herodas.mimiambi.jsonl",
+              "data/corpus/athenaeus-mechanics.de-machinis.jsonl",
+          )
+          destination = Path("real-november-primary-editorial-tf")
+          command = ["opengreek-tf", "convert-texts", str(root),
+                     "--release", NOVEMBER_RELEASE.tag]
+          for file in selected:
+              command.extend(["--file", file])
+          report = json.loads(subprocess.check_output(
+              [*command, "--output", str(destination)], text=True,
+          ))
+          assert report["primary_passages"] == 2473
+          independent = validate_native_jsonl_sources(
+              root, selected, destination, identity=NOVEMBER_RELEASE,
+          )
+          assert independent.records == 2473
+          assert independent.original_source_sha256 == report["original_source_sha256"]
+          recovered = read_native_records(destination)
+          assert len(recovered) == 2473
+          dclp = [row for row in recovered if row.source_file == selected[0]]
+          assert len(dclp) == 89
+          assert sum(row.fields.require("text") != row.fields.require("reading_text")
+                     for row in dclp) == 86
+          print("NOVEMBER_PRIMARY_REAL_TF=" + json.dumps({
+              "parsed_original_primary_rows": rows,
+              "parsed_original_primary_files": len(files),
+              "original_token_rows": token_rows,
+              "original_token_records": tokens,
+              "native_editorial_rows": independent.records,
+              "source_sha256": independent.original_source_sha256,
+              "native_sha256": report["canonical_sha256"],
+              "full_november_release": False,
           }, sort_keys=True))

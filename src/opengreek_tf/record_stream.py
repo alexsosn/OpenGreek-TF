@@ -103,11 +103,11 @@ class ChoiceSpec:
 class ScalarChoiceSpec:
     """Explicit union of scalar source types, never Python numeric coercion."""
 
-    options: tuple[type[str] | type[int], ...]
+    options: tuple[type[str] | type[int] | type[float], ...]
 
 
 SchemaSpec: TypeAlias = (
-    type[str] | type[int] | type[float] | type[bool]
+    type[str] | type[int] | type[float] | type[bool] | None
     | ArraySpec | ObjectSpec | NullableSpec | ChoiceSpec | ScalarChoiceSpec
 )
 
@@ -128,7 +128,7 @@ def _choice(*options: ObjectSpec) -> ChoiceSpec:
     return ChoiceSpec(options)
 
 
-def _scalar_choice(*options: type[str] | type[int]) -> ScalarChoiceSpec:
+def _scalar_choice(*options: type[str] | type[int] | type[float]) -> ScalarChoiceSpec:
     return ScalarChoiceSpec(options)
 
 
@@ -284,20 +284,147 @@ _NOVEMBER_MEIBOM_KEYS = frozenset(_NOVEMBER_MEIBOM_PAGE.fields)
 _NOVEMBER_CROP_KEYS = frozenset(_NOVEMBER_CROP_PAGE.fields)
 
 
+# Complete November primary census: 1,913,683 rows, 42 top-level keysets.
+# Editorial projections and token offsets are source facts, not TF slot alignment.
+_NOV_NUM = _scalar_choice(int, float)
+_NOV_LINE = _choice(_obj(n=str), _obj(n=str, **{"break": str}))
+_NOV_XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
+_NOV_TEXTPART = _choice(
+    _obj(tag=str, attributes=_choice(_obj(n=str, subtype=str, type=str))),
+    _obj(tag=str, id=str, attributes=_choice(
+        _obj(n=str, subtype=str, type=str, **{_NOV_XML_ID: str}),
+        _obj(n=str, subtype=str, type=str, corresp=str, **{_NOV_XML_ID: str}),
+    )),
+)
+_NOV_TEXTPARTS = _array(_NOV_TEXTPART)
+_NOV_CUSTODY = _array(_choice(_obj(
+    attributes=_choice(_obj(corresp=str, type=str, **{"from": str, "to": str})),
+    references=_array(_choice(_obj(url=str))),
+)))
+_NOV_PHYSICAL = _choice(
+    _obj(column=str, edition=str, license=str, printed_page=int, region=_array(float),
+         scan_page=int, sha256=str, url=str),
+    _obj(custody_events=_NOV_CUSTODY, dclp=str, document=str,
+         line_attributes=_NOV_LINE, textparts=_NOV_TEXTPARTS),
+    _obj(edition=str, printed_page=int, region=_array(float), scan_page=int, scan_sha256=str),
+    _obj(edition=str, printed_page=int, scan_page=int, scan_sha256=str),
+    _obj(line_attributes=_NOV_LINE, printed_page=int, scan_page=int,
+         textparts=_NOV_TEXTPARTS, verse=int),
+    _obj(line_attributes=_NOV_LINE, textparts=_NOV_TEXTPARTS),
+    _obj(mime=str, printed_page=int, region=_array(float), scan_page=int, verses=str),
+    _obj(printed_page=int, region=_array(float), scan_page=int, sha256=str, url=str),
+)
+_NOV_EBOOK: dict[str, SchemaSpec] = dict(
+    ebook_id=int, edition_qualification=str, source_path=str, source_sha256=str, url=str,
+)
+_NOV_PROVENANCE = _choice(
+    _obj(**_NOV_EBOOK, attribution_readings=_array(_choice(
+        _obj(author=str, evidence=str, status=str),
+    )), attribution_status=str, identity_evidence=_array(str)),
+    _obj(commit=str, glaux_id=str, source_repo=str),
+    _obj(consolidated_from=_array(str), method=str, source=str),
+    _obj(dropped_gap=int, glaux_id=str, method=str, repo=str, source=str),
+    _obj(**_NOV_EBOOK),
+    _obj(fetched=str, note=str, page=str, url=str),
+    _obj(fetched=str, page=str, url=str),
+    _obj(glaux_id=str, method=str, source=str),
+    _obj(license_url=str, method=str, page_sha256=str, url=str),
+)
+_NOV_TOKEN: dict[str, SchemaSpec] = dict(
+    end=int, form=str, lexical_eligible=bool, start=int, status=_array(str),
+)
+_NOV_TOKENS = _array(_choice(
+    _obj(**_NOV_TOKEN, analysis=None, id=str, lemma=None, span_ids=_array(str)),
+    _obj(**_NOV_TOKEN, reading_ids=_array(str)),
+    _obj(**_NOV_TOKEN, reading_ids=_array(str), numeral_ids=_array(str)),
+))
+_NOV_SCAN = _choice(_obj(height=int, label=str, sha256=str, url=str, width=int))
+_NOV_REGION: dict[str, SchemaSpec] = dict(
+    box=_array(int), column=str, printed_page=int, source_id=str,
+)
+_NOV_READING: dict[str, SchemaSpec] = dict(
+    display=str, end=int, id=str, interpretation=str, kind=str, lexical_eligible=bool,
+    normalized_reading=None, preferred=bool, printed_reading_verified=bool,
+    source_regions=_array(_choice(_obj(**_NOV_REGION, apparatus_line=int))),
+    start=int, witness=str,
+)
+_NOV_READINGS = _array(_choice(
+    _obj(**_NOV_READING, baseline_text=str, raised_letter=_choice(_obj(
+        anchor=_choice(_obj(base_character=str, base_codepoint_index=int, placement=str)),
+        linearized_boundary=None, text=str,
+    ))),
+    _obj(**_NOV_READING, comparison_lemma=str, graphemes=_array(_choice(
+        _obj(accent=str, breathing=str, letter=str),
+        _obj(baseline=str, letter=str, placement=str),
+    ))),
+))
+_NOV_NUMERALS = _array(_choice(_obj(
+    base_letter=str, display=str, end=int, expanded_word=None, id=str, kind=str,
+    lexical_eligible=bool, normalized_reading=None,
+    overbar=_choice(_obj(codepoint=str, mark=str, placement=str)),
+    printed_reading_verified=bool,
+    source_regions=_array(_choice(_obj(**_NOV_REGION, apparatus_line=str))),
+    start=int, value=int,
+)))
+_NOV_CRITICAL = _choice(
+    _obj(schema=str),
+    _obj(schema=str, source_path=str, source_sha256=str),
+    _obj(display_convention=str, numerals=_NOV_NUMERALS, printed_page=int,
+         reader_path=str, readings=_NOV_READINGS, schema=str,
+         sources=_choice(_obj(bsb=_NOV_SCAN, toronto=_NOV_SCAN))),
+)
+_NOVEMBER_PRIMARY_FIELDS: dict[str, SchemaSpec] = {
+    "analysis_segments": _array(str),
+    "analysis_text": str,
+    "chapter": int,
+    "contextual_eligible": bool,
+    "critical_markup": _NOV_CRITICAL,
+    "gap_boundary_policy": str,
+    "lang": str,
+    "language": str,
+    "line_attributes": _NOV_LINE,
+    "original_edition": str,
+    "original_locus": str,
+    "original_work": str,
+    "physical_refs": _NOV_PHYSICAL,
+    "printed_page": int,
+    "provenance": _NOV_PROVENANCE,
+    "reading_text": str,
+    "source_citation": _choice(_obj(scheme=str, locus=str)),
+    "source_location": _choice(
+        _obj(historical_missing_key=str, id=str, max_side=int, region=_array(_NOV_NUM),
+             scan_page=int, source=str),
+        _obj(marker_page=str, start_line=str, volume=str),
+    ),
+    "source_note": str,
+    "source_pdf_page": int,
+    "source_printed_columns": _array(int),
+    "source_printed_page": _nullable(int),
+    "source_scan": _choice(_obj(region=_array(_NOV_NUM), scan_page=int, sha256=str, url=str)),
+    "source_url": str,
+    "text_role": str,
+    "textparts": _NOV_TEXTPARTS,
+    "tokens": _NOV_TOKENS,
+    "word_continuations": _choice(_obj(from_previous_line=bool, to_next_line=bool)),
+}
+
+
 _NOVEMBER_GUTENBERG: dict[str, SchemaSpec] = {
     "locus": str, "source": str, "source_sha256": str, "text": str,
 }
 
 
 def _decode(value: object, spec: SchemaSpec, *, field: str, context: str) -> FieldValue:
+    if spec is None:
+        if value is not None:
+            raise RecordParseError(f"{context}: {field}: expected original null")
+        return None
     if isinstance(spec, ScalarChoiceSpec):
-        if type(value) not in spec.options:
-            raise RecordParseError(
-                f"{context}: {field}: expected str or int source scalar"
-            )
-        if isinstance(value, (str, int)):
-            return value
-        raise AssertionError("unreachable audited scalar type")
+        for option in spec.options:
+            if type(value) is option:
+                return _decode(value, option, field=field, context=context)
+        expected = " or ".join(option.__name__ for option in spec.options)
+        raise RecordParseError(f"{context}: {field}: expected {expected} source scalar")
     if isinstance(spec, ChoiceSpec):
         if not isinstance(value, dict):
             raise RecordParseError(f"{context}: {field}: expected object variant")
@@ -556,7 +683,9 @@ def parse_file(
     fields_schema = SCHEMAS[family]
     required = REQUIRED[family]
     if identity.tag == NOVEMBER_RELEASE.tag:
-        if family == "secondary":
+        if family == "primary":
+            fields_schema = {**fields_schema, **_NOVEMBER_PRIMARY_FIELDS}
+        elif family == "secondary":
             fields_schema = {**fields_schema, **_NOVEMBER_SECONDARY_FIELDS}
         elif (
             family == "paratext"
