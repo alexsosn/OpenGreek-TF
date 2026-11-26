@@ -156,6 +156,14 @@ jobs:
           def json_order(value):
               return json.dumps(value, ensure_ascii=True, sort_keys=True)
 
+          def unique_object(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError(f"duplicate source key {key!r}")
+                  result[key] = value
+              return result
+
           report = {}
           for family, dirname, expected, expected_rows in (
               ("primary", "corpus", 3939, 1913683),
@@ -165,6 +173,7 @@ jobs:
               paths = sorted((root / "data" / dirname).rglob("*.jsonl"))
               assert len(paths) == expected, (family, len(paths), expected)
               field_types = Counter()
+              field_examples = {}
               variants = Counter()
               variant_examples = {}
               nested = Counter()
@@ -177,7 +186,14 @@ jobs:
                   relative = path.relative_to(root).as_posix()
                   with path.open("rb") as source:
                       for lineno, raw in enumerate(source, 1):
-                          obj = json.loads(raw)
+                          try:
+                              line = raw.decode("utf-8", errors="strict")
+                          except UnicodeDecodeError as exc:
+                              raise ValueError(f"{relative}:{lineno}: invalid UTF-8") from exc
+                          try:
+                              obj = json.loads(line, object_pairs_hook=unique_object)
+                          except ValueError as exc:
+                              raise ValueError(f"{relative}:{lineno}: {exc}") from exc
                           assert type(obj) is dict, (path, lineno)
                           assert type(obj.get("text")) is str, (path, lineno)
                           rows += 1
@@ -187,7 +203,9 @@ jobs:
                           variants[keys] += 1
                           variant_examples.setdefault(keys, example)
                           for name, value in obj.items():
-                              field_types[(name, kind(value))] += 1
+                              field_key = (name, kind(value))
+                              field_types[field_key] += 1
+                              field_examples.setdefault(field_key, example)
                               if type(value) in (dict, list) or (type(value) is str and "\r" in value):
                                   scan(value, (name,), nested, nested_examples, cr, example)
                   files_with_rows += file_rows > 0
@@ -196,8 +214,10 @@ jobs:
               report[family] = {
                   "files": len(paths), "nonempty_files": files_with_rows,
                   "rows": rows,
-                  "field_types": [{"field": k, "type": t, "count": n}
-                                  for (k, t), n in sorted(field_types.items())],
+                  "field_types": [
+                      {"field": k, "type": t, "count": n, "example": field_examples[(k, t)]}
+                      for (k, t), n in sorted(field_types.items())
+                  ],
                   "row_variants": [
                       {"keys": list(keys), "count": n, "example": variant_examples[keys]}
                       for keys, n in sorted(variants.items())
